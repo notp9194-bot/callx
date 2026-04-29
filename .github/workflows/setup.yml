@@ -2263,6 +2263,7 @@ jobs:
               public String photoUrl;
               public String callxId;
               public String fcmToken;
+              public String emoji;
               public Long lastSeen;
               public Boolean online;
               public Boolean privacyShowLastSeen;
@@ -2577,6 +2578,12 @@ jobs:
               public static DatabaseReference contacts() { return db().getReference("contacts"); }
               public static DatabaseReference getContactsRef(String uid) {
                   return db().getReference("contacts").child(uid);
+              }
+              public static DatabaseReference getRequestsRef(String uid) {
+                  return db().getReference("requests").child(uid);
+              }
+              public static DatabaseReference getUserRef(String uid) {
+                  return db().getReference("users").child(uid);
               }
               public static String chatKey(String a, String b) {
                   return (a.compareTo(b) < 0) ? a + "_" + b : b + "_" + a;
