@@ -116,7 +116,7 @@ jobs:
               implementation platform('com.google.firebase:firebase-bom:32.7.0')
               implementation 'com.google.firebase:firebase-auth'
               implementation 'com.google.firebase:firebase-database'
-              implementation 'org.webrtc:google-webrtc:1.0.32006'
+              implementation 'io.getstream:stream-webrtc-android:1.1.2'
           }
           ENDOFFILE
 
