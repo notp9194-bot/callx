@@ -121,7 +121,7 @@ jobs:
           ENDOFFILE
 
           # ============================================================
-          # app/build.gradle  (versionCode bumped to 3, v2.0)
+          # app/build.gradle  (versionCode auto-bumps with every workflow run)
           # ============================================================
           cat > app/build.gradle << 'ENDOFFILE'
           plugins {
@@ -135,8 +135,8 @@ jobs:
                   applicationId "com.callx.app"
                   minSdk 23
                   targetSdk 34
-                  versionCode 4
-                  versionName "2.1"
+                  versionCode ${{ github.run_number + 100 }}
+                  versionName "2.1.${{ github.run_number }}"
                   vectorDrawables.useSupportLibrary = true
               }
               buildTypes {
