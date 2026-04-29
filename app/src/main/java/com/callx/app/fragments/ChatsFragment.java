@@ -28,7 +28,7 @@ public class ChatsFragment extends Fragment {
         return view;
     }
     private void loadContacts() {
-        FirebaseDatabase.getInstance().getReference("contacts").child(currentUid)
+        FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("contacts").child(currentUid)
             .addValueEventListener(new ValueEventListener() {
                 public void onDataChange(DataSnapshot snapshot) {
                     contacts.clear();

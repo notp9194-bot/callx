@@ -43,7 +43,7 @@ public class SearchActivity extends AppCompatActivity {
         llResult.setVisibility(View.GONE);
         tvStatus.setText("Dhundh raha hai...");
         tvStatus.setVisibility(View.VISIBLE);
-        FirebaseDatabase.getInstance().getReference("users")
+        FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("users")
             .orderByChild("callxId").equalTo(callxId)
             .addListenerForSingleValueEvent(new ValueEventListener() {
                 public void onDataChange(DataSnapshot snapshot) {
@@ -73,7 +73,7 @@ public class SearchActivity extends AppCompatActivity {
     }
     private void sendRequest() {
         if (foundUid == null) return;
-        DatabaseReference db = FirebaseDatabase.getInstance().getReference();
+        DatabaseReference db = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference();
         // Already contact check
         db.child("contacts").child(currentUid).child(foundUid)
             .addListenerForSingleValueEvent(new ValueEventListener() {
