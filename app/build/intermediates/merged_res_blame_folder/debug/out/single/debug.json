@@ -1,5 +1,9 @@
 [
     {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_arrow_back.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_arrow_back.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/drawable_circle_red.xml.flat",
         "source": "com.callx.app-main-52:/drawable/circle_red.xml"
     },
@@ -166,6 +170,10 @@
     {
         "merged": "com.callx.app-merged_res-50:/drawable_circle_reject.xml.flat",
         "source": "com.callx.app-main-52:/drawable/circle_reject.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_send_fill.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_send_fill.xml"
     },
     {
         "merged": "com.callx.app-merged_res-50:/layout_activity_status_viewer.xml.flat",
