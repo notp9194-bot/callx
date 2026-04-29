@@ -39,7 +39,7 @@ jobs:
               "project_number": "286173223634",
               "project_id": "sathix-97a76",
               "storage_bucket": "sathix-97a76.firebasestorage.app",
-              "firebase_url": "https://sathix-97a76-default-rtdb.firebaseio.com"
+              "firebase_url": "https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app"
             },
             "client": [
               {
@@ -941,7 +941,7 @@ jobs:
                                   data.put("name", name);
                                   data.put("emoji", "😊");
                                   data.put("callxId", callxId);
-                                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("users")
+                                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("users")
                                       .child(user.getUid()).setValue(data)
                                       .addOnSuccessListener(x -> {
                                           Toast.makeText(this,
@@ -1011,7 +1011,7 @@ jobs:
                       startActivity(new Intent(this, SearchActivity.class)));
                   // Apna CallX ID dikhao
                   String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
-                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("users").child(uid)
+                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("users").child(uid)
                       .addListenerForSingleValueEvent(new ValueEventListener() {
                           public void onDataChange(DataSnapshot snap) {
                               String id = snap.child("callxId").getValue(String.class);
@@ -1074,7 +1074,7 @@ jobs:
                   adapter = new MessageAdapter(messages, currentUid);
                   binding.rvMessages.setLayoutManager(new LinearLayoutManager(this));
                   binding.rvMessages.setAdapter(adapter);
-                  messagesRef = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("messages").child(chatId);
+                  messagesRef = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("messages").child(chatId);
                   messagesRef.addChildEventListener(new ChildEventListener() {
                       public void onChildAdded(DataSnapshot s, String prev) {
                           Message msg = s.getValue(Message.class);
@@ -1155,7 +1155,7 @@ jobs:
                   llResult.setVisibility(View.GONE);
                   tvStatus.setText("Dhundh raha hai...");
                   tvStatus.setVisibility(View.VISIBLE);
-                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("users")
+                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("users")
                       .orderByChild("callxId").equalTo(callxId)
                       .addListenerForSingleValueEvent(new ValueEventListener() {
                           public void onDataChange(DataSnapshot snapshot) {
@@ -1185,7 +1185,7 @@ jobs:
               }
               private void sendRequest() {
                   if (foundUid == null) return;
-                  DatabaseReference db = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference();
+                  DatabaseReference db = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference();
                   // Already contact check
                   db.child("contacts").child(currentUid).child(foundUid)
                       .addListenerForSingleValueEvent(new ValueEventListener() {
@@ -1290,7 +1290,7 @@ jobs:
               }
               private void endCall() {
                   if (peerConnection != null) peerConnection.close();
-                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("calls").child(partnerUid).removeValue();
+                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("calls").child(partnerUid).removeValue();
                   finish();
               }
               @Override
@@ -1486,7 +1486,7 @@ jobs:
                   return view;
               }
               private void loadContacts() {
-                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("contacts").child(currentUid)
+                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("contacts").child(currentUid)
                       .addValueEventListener(new ValueEventListener() {
                           public void onDataChange(DataSnapshot snapshot) {
                               contacts.clear();
@@ -1526,7 +1526,7 @@ jobs:
                   return view;
               }
               private void loadRequests() {
-                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("requests").child(currentUid)
+                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("requests").child(currentUid)
                       .addValueEventListener(new ValueEventListener() {
                           public void onDataChange(DataSnapshot snapshot) {
                               llContainer.removeAllViews();
@@ -1560,7 +1560,7 @@ jobs:
                   llContainer.addView(card);
               }
               private void acceptRequest(String fromUid, String fromName) {
-                  DatabaseReference db = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference();
+                  DatabaseReference db = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference();
                   String myName = FirebaseAuth.getInstance().getCurrentUser().getDisplayName();
                   if (myName == null || myName.isEmpty()) myName = "CallX User";
                   // Dono ke contacts mein add karo
@@ -1576,7 +1576,7 @@ jobs:
                       fromName + " contact mein add ho gaya! ✅", Toast.LENGTH_SHORT).show();
               }
               private void rejectRequest(String fromUid) {
-                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("requests")
+                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("requests")
                       .child(currentUid).child(fromUid).removeValue();
                   Toast.makeText(getContext(), "Request reject kar di", Toast.LENGTH_SHORT).show();
               }
@@ -1618,19 +1618,19 @@ jobs:
                   return FirebaseAuth.getInstance().getCurrentUser().getUid();
               }
               public static DatabaseReference getUserRef(String uid) {
-                  return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("users").child(uid);
+                  return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("users").child(uid);
               }
               public static DatabaseReference getMessagesRef(String chatId) {
-                  return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("messages").child(chatId);
+                  return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("messages").child(chatId);
               }
               public static DatabaseReference getContactsRef(String uid) {
-                  return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("contacts").child(uid);
+                  return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("contacts").child(uid);
               }
               public static DatabaseReference getRequestsRef(String uid) {
-                  return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("requests").child(uid);
+                  return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("requests").child(uid);
               }
               public static DatabaseReference getCallsRef(String uid) {
-                  return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("calls").child(uid);
+                  return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("calls").child(uid);
               }
               public static String getChatId(String uid1, String uid2) {
                   String[] ids = {uid1, uid2};
