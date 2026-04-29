@@ -135,8 +135,8 @@ jobs:
                   applicationId "com.callx.app"
                   minSdk 23
                   targetSdk 34
-                  versionCode ${{ github.run_number + 100 }}
-                  versionName "2.1.${{ github.run_number }}"
+                  versionCode __VERSION_CODE__
+                  versionName "__VERSION_NAME__"
                   vectorDrawables.useSupportLibrary = true
               }
               buildTypes {
@@ -194,6 +194,14 @@ jobs:
               implementation 'de.hdodenhof:circleimageview:3.1.0'
           }
           ENDOFFILE
+
+          # --- Auto-bump version (har workflow run pe alag versionCode) ---
+          RUN_NUM="${{ github.run_number }}"
+          VCODE=$((100 + RUN_NUM))
+          VNAME="2.1.${RUN_NUM}"
+          sed -i "s/__VERSION_CODE__/${VCODE}/" app/build.gradle
+          sed -i "s/__VERSION_NAME__/${VNAME}/" app/build.gradle
+          echo "Build version: code=${VCODE} name=${VNAME}"
 
           # ============================================================
           # AndroidManifest.xml — all permissions for media, mic, file, fg svc
