@@ -1,0 +1,1203 @@
+name: Setup CallX Project
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Full Project Structure
+        run: |
+          # === GRADLE FILES ===
+          mkdir -p gradle/wrapper
+          mkdir -p app/src/main/java/com/callx/app/activities
+          mkdir -p app/src/main/java/com/callx/app/fragments
+          mkdir -p app/src/main/java/com/callx/app/adapters
+          mkdir -p app/src/main/java/com/callx/app/models
+          mkdir -p app/src/main/java/com/callx/app/utils
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/menu
+
+          # === settings.gradle ===
+          cat > settings.gradle << 'ENDOFFILE'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "CallX"
+          include ':app'
+          ENDOFFILE
+
+          # === build.gradle ROOT ===
+          cat > build.gradle << 'ENDOFFILE'
+          buildscript {
+              dependencies {
+                  classpath 'com.google.gms:google-services:4.4.0'
+              }
+          }
+          plugins {
+              id 'com.android.application' version '8.2.2' apply false
+          }
+          ENDOFFILE
+
+          # === gradle.properties ===
+          cat > gradle.properties << 'ENDOFFILE'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.enableJetifier=true
+          ENDOFFILE
+
+          # === gradle-wrapper.properties ===
+          cat > gradle/wrapper/gradle-wrapper.properties << 'ENDOFFILE'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          ENDOFFILE
+
+          # === app/build.gradle ===
+          cat > app/build.gradle << 'ENDOFFILE'
+          plugins {
+              id 'com.android.application'
+              id 'com.google.gms.google-services'
+          }
+          android {
+              namespace 'com.callx.app'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.callx.app"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  debug { minifyEnabled false }
+                  release { minifyEnabled false }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              buildFeatures {
+                  viewBinding true
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+              implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+              implementation 'androidx.recyclerview:recyclerview:1.3.2'
+              implementation 'androidx.viewpager2:viewpager2:1.0.0'
+              implementation 'androidx.cardview:cardview:1.0.0'
+              implementation platform('com.google.firebase:firebase-bom:32.7.0')
+              implementation 'com.google.firebase:firebase-auth'
+              implementation 'com.google.firebase:firebase-database'
+              implementation 'org.webrtc:google-webrtc:1.0.32006'
+          }
+          ENDOFFILE
+
+          # === AndroidManifest.xml ===
+          cat > app/src/main/AndroidManifest.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.CAMERA"/>
+              <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+              <uses-permission android:name="android.permission.VIBRATE"/>
+              <application
+                  android:allowBackup="true"
+                  android:label="CallX"
+                  android:theme="@style/Theme.CallX"
+                  android:supportsRtl="true">
+                  <activity
+                      android:name=".activities.AuthActivity"
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <activity android:name=".activities.MainActivity" android:exported="false"/>
+                  <activity android:name=".activities.ChatActivity" android:exported="false" android:windowSoftInputMode="adjustResize"/>
+                  <activity android:name=".activities.CallActivity" android:exported="false" android:screenOrientation="portrait" android:showWhenLocked="true" android:turnScreenOn="true"/>
+              </application>
+          </manifest>
+          ENDOFFILE
+
+          # === colors.xml ===
+          cat > app/src/main/res/values/colors.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="callx_header_bg">#005c97</color>
+              <color name="callx_accent_blue">#34B7F1</color>
+              <color name="callx_message_out_bg">#e1f6fb</color>
+              <color name="callx_message_in_bg">#ffffff</color>
+              <color name="callx_app_bg">#f0f2f5</color>
+              <color name="callx_chat_bg">#e5ddd5</color>
+              <color name="callx_icon_color">#f0f2f5</color>
+              <color name="callx_text_primary">#111b21</color>
+              <color name="callx_text_secondary">#667781</color>
+              <color name="callx_border_color">#e9edef</color>
+              <color name="callx_button_color">#008069</color>
+              <color name="callx_end_call">#e91e63</color>
+              <color name="callx_accept_call">#4CAF50</color>
+              <color name="white">#FFFFFF</color>
+              <color name="black">#000000</color>
+          </resources>
+          ENDOFFILE
+
+          # === strings.xml ===
+          cat > app/src/main/res/values/strings.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">CallX</string>
+              <string name="hint_email">Email</string>
+              <string name="hint_password">Password</string>
+              <string name="hint_message">Message…</string>
+              <string name="btn_login">Login</string>
+              <string name="btn_signup">Sign Up</string>
+              <string name="btn_send">Send</string>
+              <string name="tab_chats">Chats</string>
+              <string name="tab_updates">Updates</string>
+              <string name="tab_calls">Calls</string>
+          </resources>
+          ENDOFFILE
+
+          # === themes.xml ===
+          cat > app/src/main/res/values/themes.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Theme.CallX" parent="Theme.MaterialComponents.Light.NoActionBar">
+                  <item name="colorPrimary">#005c97</item>
+                  <item name="colorPrimaryVariant">#004a7a</item>
+                  <item name="colorSecondary">#34B7F1</item>
+                  <item name="colorOnPrimary">#ffffff</item>
+                  <item name="android:statusBarColor">#004a7a</item>
+              </style>
+          </resources>
+          ENDOFFILE
+
+          # === bubble_sent.xml ===
+          cat > app/src/main/res/drawable/bubble_sent.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <solid android:color="#e1f6fb"/>
+              <corners android:topLeftRadius="18dp" android:topRightRadius="18dp" android:bottomLeftRadius="18dp" android:bottomRightRadius="4dp"/>
+          </shape>
+          ENDOFFILE
+
+          # === bubble_received.xml ===
+          cat > app/src/main/res/drawable/bubble_received.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <solid android:color="#ffffff"/>
+              <corners android:topLeftRadius="18dp" android:topRightRadius="18dp" android:bottomLeftRadius="4dp" android:bottomRightRadius="18dp"/>
+          </shape>
+          ENDOFFILE
+
+          # === rounded_input_bg.xml ===
+          cat > app/src/main/res/drawable/rounded_input_bg.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <solid android:color="#ffffff"/>
+              <corners android:radius="24dp"/>
+              <stroke android:width="1dp" android:color="#e9edef"/>
+          </shape>
+          ENDOFFILE
+
+          # === circle_green.xml ===
+          cat > app/src/main/res/drawable/circle_green.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+              <solid android:color="#4CAF50"/>
+          </shape>
+          ENDOFFILE
+
+          # === circle_red.xml ===
+          cat > app/src/main/res/drawable/circle_red.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+              <solid android:color="#e91e63"/>
+          </shape>
+          ENDOFFILE
+
+          # === circle_avatar_bg.xml ===
+          cat > app/src/main/res/drawable/circle_avatar_bg.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+              <solid android:color="#e1f6fb"/>
+          </shape>
+          ENDOFFILE
+
+          # === activity_auth.xml ===
+          cat > app/src/main/res/layout/activity_auth.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#f0f2f5">
+              <LinearLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:orientation="vertical"
+                  android:padding="32dp"
+                  android:gravity="center_horizontal">
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:text="CallX"
+                      android:textSize="48sp"
+                      android:textStyle="bold"
+                      android:textColor="#005c97"
+                      android:layout_marginTop="60dp"/>
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:text="Connect. Call. Chat."
+                      android:textColor="#667781"
+                      android:textSize="16sp"
+                      android:layout_marginTop="8dp"
+                      android:layout_marginBottom="48dp"/>
+                  <com.google.android.material.textfield.TextInputLayout
+                      android:id="@+id/til_email"
+                      style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:hint="Email">
+                      <com.google.android.material.textfield.TextInputEditText
+                          android:id="@+id/et_email"
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:inputType="textEmailAddress"/>
+                  </com.google.android.material.textfield.TextInputLayout>
+                  <com.google.android.material.textfield.TextInputLayout
+                      android:id="@+id/til_password"
+                      style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:hint="Password"
+                      android:layout_marginTop="16dp"
+                      app:passwordToggleEnabled="true"
+                      xmlns:app="http://schemas.android.com/apk/res-auto">
+                      <com.google.android.material.textfield.TextInputEditText
+                          android:id="@+id/et_password"
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:inputType="textPassword"/>
+                  </com.google.android.material.textfield.TextInputLayout>
+                  <TextView
+                      android:id="@+id/tv_error"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:textColor="#e91e63"
+                      android:layout_marginTop="8dp"
+                      android:visibility="gone"/>
+                  <Button
+                      android:id="@+id/btn_login"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Login"
+                      android:backgroundTint="#008069"
+                      android:layout_marginTop="24dp"/>
+                  <Button
+                      android:id="@+id/btn_signup"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Sign Up"
+                      style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                      android:layout_marginTop="12dp"/>
+              </LinearLayout>
+          </ScrollView>
+          ENDOFFILE
+
+          # === activity_main.xml ===
+          cat > app/src/main/res/layout/activity_main.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:app="http://schemas.android.com/apk/res-auto"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical">
+              <androidx.appcompat.widget.Toolbar
+                  android:id="@+id/toolbar"
+                  android:layout_width="match_parent"
+                  android:layout_height="?attr/actionBarSize"
+                  android:background="#005c97"
+                  app:title="CallX"
+                  app:titleTextColor="#ffffff"/>
+              <com.google.android.material.tabs.TabLayout
+                  android:id="@+id/tab_layout"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:background="#005c97"
+                  app:tabTextColor="#b0c4d8"
+                  app:tabSelectedTextColor="#ffffff"
+                  app:tabIndicatorColor="#34B7F1"/>
+              <androidx.viewpager2.widget.ViewPager2
+                  android:id="@+id/view_pager"
+                  android:layout_width="match_parent"
+                  android:layout_height="0dp"
+                  android:layout_weight="1"/>
+          </LinearLayout>
+          ENDOFFILE
+
+          # === activity_chat.xml ===
+          cat > app/src/main/res/layout/activity_chat.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:app="http://schemas.android.com/apk/res-auto"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical">
+              <androidx.appcompat.widget.Toolbar
+                  android:id="@+id/toolbar"
+                  android:layout_width="match_parent"
+                  android:layout_height="?attr/actionBarSize"
+                  android:background="#005c97"
+                  app:navigationIcon="@drawable/ic_back"
+                  app:titleTextColor="#ffffff"/>
+              <androidx.recyclerview.widget.RecyclerView
+                  android:id="@+id/rv_messages"
+                  android:layout_width="match_parent"
+                  android:layout_height="0dp"
+                  android:layout_weight="1"
+                  android:background="#e5ddd5"
+                  android:padding="8dp"
+                  android:clipToPadding="false"/>
+              <LinearLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:orientation="horizontal"
+                  android:padding="8dp"
+                  android:background="#ffffff"
+                  android:gravity="center_vertical">
+                  <EditText
+                      android:id="@+id/et_message"
+                      android:layout_width="0dp"
+                      android:layout_height="wrap_content"
+                      android:layout_weight="1"
+                      android:hint="Message…"
+                      android:background="@drawable/rounded_input_bg"
+                      android:padding="12dp"
+                      android:maxLines="4"/>
+                  <ImageButton
+                      android:id="@+id/btn_send"
+                      android:layout_width="48dp"
+                      android:layout_height="48dp"
+                      android:src="@android:drawable/ic_menu_send"
+                      android:background="@drawable/circle_green"
+                      android:layout_marginStart="8dp"
+                      android:tint="#ffffff"/>
+              </LinearLayout>
+          </LinearLayout>
+          ENDOFFILE
+
+          # === activity_call.xml ===
+          cat > app/src/main/res/layout/activity_call.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#000000">
+              <org.webrtc.SurfaceViewRenderer
+                  android:id="@+id/remote_video"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"/>
+              <org.webrtc.SurfaceViewRenderer
+                  android:id="@+id/local_video"
+                  android:layout_width="120dp"
+                  android:layout_height="160dp"
+                  android:layout_gravity="top|end"
+                  android:layout_margin="16dp"/>
+              <LinearLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:layout_gravity="bottom"
+                  android:orientation="vertical"
+                  android:padding="32dp"
+                  android:gravity="center">
+                  <TextView
+                      android:id="@+id/tv_caller_name"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:textColor="#ffffff"
+                      android:textSize="24sp"
+                      android:textStyle="bold"/>
+                  <TextView
+                      android:id="@+id/tv_call_status"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:textColor="#34B7F1"
+                      android:textSize="16sp"
+                      android:layout_marginTop="8dp"
+                      android:layout_marginBottom="32dp"/>
+                  <LinearLayout
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:orientation="horizontal"
+                      android:gravity="center">
+                      <ImageButton
+                          android:id="@+id/btn_toggle_mic"
+                          android:layout_width="56dp"
+                          android:layout_height="56dp"
+                          android:src="@android:drawable/ic_btn_speak_now"
+                          android:background="@drawable/circle_avatar_bg"
+                          android:layout_marginEnd="24dp"/>
+                      <ImageButton
+                          android:id="@+id/btn_end_call"
+                          android:layout_width="72dp"
+                          android:layout_height="72dp"
+                          android:src="@android:drawable/ic_delete"
+                          android:background="@drawable/circle_red"
+                          android:tint="#ffffff"
+                          android:layout_marginEnd="24dp"/>
+                      <ImageButton
+                          android:id="@+id/btn_toggle_camera"
+                          android:layout_width="56dp"
+                          android:layout_height="56dp"
+                          android:src="@android:drawable/ic_menu_camera"
+                          android:background="@drawable/circle_avatar_bg"/>
+                  </LinearLayout>
+              </LinearLayout>
+          </FrameLayout>
+          ENDOFFILE
+
+          # === fragment_chats.xml ===
+          cat > app/src/main/res/layout/fragment_chats.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#f0f2f5">
+              <androidx.recyclerview.widget.RecyclerView
+                  android:id="@+id/rv_chats"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"/>
+          </FrameLayout>
+          ENDOFFILE
+
+          # === fragment_updates.xml ===
+          cat > app/src/main/res/layout/fragment_updates.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#f0f2f5">
+              <androidx.recyclerview.widget.RecyclerView
+                  android:id="@+id/rv_requests"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"/>
+          </FrameLayout>
+          ENDOFFILE
+
+          # === fragment_calls.xml ===
+          cat > app/src/main/res/layout/fragment_calls.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#f0f2f5">
+              <androidx.recyclerview.widget.RecyclerView
+                  android:id="@+id/rv_calls"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"/>
+          </FrameLayout>
+          ENDOFFILE
+
+          # === item_contact.xml ===
+          cat > app/src/main/res/layout/item_contact.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:orientation="horizontal"
+              android:padding="16dp"
+              android:background="#ffffff"
+              android:gravity="center_vertical">
+              <TextView
+                  android:id="@+id/tv_avatar"
+                  android:layout_width="48dp"
+                  android:layout_height="48dp"
+                  android:gravity="center"
+                  android:textSize="24sp"
+                  android:background="@drawable/circle_avatar_bg"/>
+              <LinearLayout
+                  android:layout_width="0dp"
+                  android:layout_height="wrap_content"
+                  android:layout_weight="1"
+                  android:orientation="vertical"
+                  android:layout_marginStart="16dp">
+                  <TextView
+                      android:id="@+id/tv_name"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:textStyle="bold"
+                      android:textColor="#111b21"
+                      android:textSize="16sp"/>
+                  <TextView
+                      android:id="@+id/tv_last_message"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:textColor="#667781"
+                      android:textSize="14sp"
+                      android:maxLines="1"
+                      android:ellipsize="end"/>
+              </LinearLayout>
+              <TextView
+                  android:id="@+id/tv_unread"
+                  android:layout_width="24dp"
+                  android:layout_height="24dp"
+                  android:gravity="center"
+                  android:textColor="#ffffff"
+                  android:textSize="12sp"
+                  android:background="@drawable/circle_green"
+                  android:visibility="gone"/>
+          </LinearLayout>
+          ENDOFFILE
+
+          # === item_message_sent.xml ===
+          cat > app/src/main/res/layout/item_message_sent.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:gravity="end"
+              android:padding="4dp">
+              <TextView
+                  android:id="@+id/tv_message"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:background="@drawable/bubble_sent"
+                  android:padding="10dp"
+                  android:textColor="#111b21"
+                  android:maxWidth="260dp"/>
+          </LinearLayout>
+          ENDOFFILE
+
+          # === item_message_received.xml ===
+          cat > app/src/main/res/layout/item_message_received.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:gravity="start"
+              android:padding="4dp">
+              <TextView
+                  android:id="@+id/tv_message"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:background="@drawable/bubble_received"
+                  android:padding="10dp"
+                  android:textColor="#111b21"
+                  android:maxWidth="260dp"/>
+          </LinearLayout>
+          ENDOFFILE
+
+          # === item_request.xml ===
+          cat > app/src/main/res/layout/item_request.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:orientation="horizontal"
+              android:padding="16dp"
+              android:background="#ffffff"
+              android:gravity="center_vertical">
+              <TextView
+                  android:id="@+id/tv_avatar"
+                  android:layout_width="48dp"
+                  android:layout_height="48dp"
+                  android:gravity="center"
+                  android:textSize="24sp"
+                  android:background="@drawable/circle_avatar_bg"/>
+              <LinearLayout
+                  android:layout_width="0dp"
+                  android:layout_height="wrap_content"
+                  android:layout_weight="1"
+                  android:orientation="vertical"
+                  android:layout_marginStart="16dp">
+                  <TextView
+                      android:id="@+id/tv_name"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:textStyle="bold"
+                      android:textColor="#111b21"/>
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:text="wants to connect"
+                      android:textColor="#667781"/>
+              </LinearLayout>
+              <Button
+                  android:id="@+id/btn_accept"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="Accept"
+                  android:backgroundTint="#4CAF50"
+                  android:textColor="#ffffff"
+                  android:layout_marginEnd="8dp"/>
+              <Button
+                  android:id="@+id/btn_reject"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="Reject"
+                  style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+          </LinearLayout>
+          ENDOFFILE
+
+          # === AuthActivity.java ===
+          cat > app/src/main/java/com/callx/app/activities/AuthActivity.java << 'ENDOFFILE'
+          package com.callx.app.activities;
+          import android.content.Intent;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.widget.Toast;
+          import androidx.appcompat.app.AppCompatActivity;
+          import com.callx.app.databinding.ActivityAuthBinding;
+          import com.google.firebase.auth.FirebaseAuth;
+          import com.google.firebase.auth.FirebaseUser;
+          import com.google.firebase.database.FirebaseDatabase;
+          public class AuthActivity extends AppCompatActivity {
+              private ActivityAuthBinding binding;
+              private FirebaseAuth auth;
+              private boolean isLoginMode = true;
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  binding = ActivityAuthBinding.inflate(getLayoutInflater());
+                  setContentView(binding.getRoot());
+                  auth = FirebaseAuth.getInstance();
+                  FirebaseUser currentUser = auth.getCurrentUser();
+                  if (currentUser != null) {
+                      goToMain();
+                      return;
+                  }
+                  binding.btnLogin.setOnClickListener(v -> {
+                      String email = binding.etEmail.getText().toString().trim();
+                      String password = binding.etPassword.getText().toString().trim();
+                      if (email.isEmpty() || password.isEmpty()) {
+                          showError("Please fill all fields");
+                          return;
+                      }
+                      if (isLoginMode) {
+                          auth.signInWithEmailAndPassword(email, password)
+                              .addOnSuccessListener(r -> goToMain())
+                              .addOnFailureListener(e -> showError(e.getMessage()));
+                      } else {
+                          auth.createUserWithEmailAndPassword(email, password)
+                              .addOnSuccessListener(r -> {
+                                  saveUserProfile(r.getUser().getUid(), email);
+                                  goToMain();
+                              })
+                              .addOnFailureListener(e -> showError(e.getMessage()));
+                      }
+                  });
+                  binding.btnSignup.setOnClickListener(v -> {
+                      isLoginMode = !isLoginMode;
+                      binding.btnLogin.setText(isLoginMode ? "Login" : "Sign Up");
+                      binding.btnSignup.setText(isLoginMode ? "Sign Up" : "Back to Login");
+                  });
+              }
+              private void saveUserProfile(String uid, String email) {
+                  java.util.Map<String, Object> user = new java.util.HashMap<>();
+                  user.put("uid", uid);
+                  user.put("email", email);
+                  user.put("name", email.split("@")[0]);
+                  user.put("emoji", "😊");
+                  user.put("callxId", uid.substring(0, 8).toUpperCase());
+                  FirebaseDatabase.getInstance().getReference("users").child(uid).setValue(user);
+              }
+              private void showError(String msg) {
+                  binding.tvError.setVisibility(View.VISIBLE);
+                  binding.tvError.setText(msg);
+              }
+              private void goToMain() {
+                  startActivity(new Intent(this, MainActivity.class));
+                  finish();
+              }
+          }
+          ENDOFFILE
+
+          # === MainActivity.java ===
+          cat > app/src/main/java/com/callx/app/activities/MainActivity.java << 'ENDOFFILE'
+          package com.callx.app.activities;
+          import android.os.Bundle;
+          import androidx.appcompat.app.AppCompatActivity;
+          import androidx.viewpager2.widget.ViewPager2;
+          import com.callx.app.adapters.ViewPagerAdapter;
+          import com.callx.app.databinding.ActivityMainBinding;
+          import com.google.android.material.tabs.TabLayoutMediator;
+          public class MainActivity extends AppCompatActivity {
+              private ActivityMainBinding binding;
+              private final String[] tabs = {"Chats", "Updates", "Calls"};
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  binding = ActivityMainBinding.inflate(getLayoutInflater());
+                  setContentView(binding.getRoot());
+                  setSupportActionBar(binding.toolbar);
+                  ViewPagerAdapter adapter = new ViewPagerAdapter(this);
+                  binding.viewPager.setAdapter(adapter);
+                  new TabLayoutMediator(binding.tabLayout, binding.viewPager,
+                      (tab, position) -> tab.setText(tabs[position])).attach();
+              }
+          }
+          ENDOFFILE
+
+          # === ChatActivity.java ===
+          cat > app/src/main/java/com/callx/app/activities/ChatActivity.java << 'ENDOFFILE'
+          package com.callx.app.activities;
+          import android.os.Bundle;
+          import androidx.appcompat.app.AppCompatActivity;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import com.callx.app.adapters.MessageAdapter;
+          import com.callx.app.databinding.ActivityChatBinding;
+          import com.callx.app.models.Message;
+          import com.google.firebase.auth.FirebaseAuth;
+          import com.google.firebase.database.*;
+          import java.util.ArrayList;
+          import java.util.HashMap;
+          import java.util.List;
+          import java.util.Map;
+          public class ChatActivity extends AppCompatActivity {
+              private ActivityChatBinding binding;
+              private MessageAdapter adapter;
+              private List<Message> messages = new ArrayList<>();
+              private String chatId, currentUid, partnerUid;
+              private DatabaseReference messagesRef;
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  binding = ActivityChatBinding.inflate(getLayoutInflater());
+                  setContentView(binding.getRoot());
+                  setSupportActionBar(binding.toolbar);
+                  getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+                  currentUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+                  partnerUid = getIntent().getStringExtra("partnerUid");
+                  String partnerName = getIntent().getStringExtra("partnerName");
+                  binding.toolbar.setTitle(partnerName != null ? partnerName : "Chat");
+                  String[] ids = {currentUid, partnerUid};
+                  java.util.Arrays.sort(ids);
+                  chatId = ids[0] + "_" + ids[1];
+                  adapter = new MessageAdapter(messages, currentUid);
+                  binding.rvMessages.setLayoutManager(new LinearLayoutManager(this));
+                  binding.rvMessages.setAdapter(adapter);
+                  messagesRef = FirebaseDatabase.getInstance().getReference("messages").child(chatId);
+                  messagesRef.addChildEventListener(new ChildEventListener() {
+                      public void onChildAdded(DataSnapshot s, String prev) {
+                          Message msg = s.getValue(Message.class);
+                          if (msg != null) {
+                              messages.add(msg);
+                              adapter.notifyItemInserted(messages.size() - 1);
+                              binding.rvMessages.scrollToPosition(messages.size() - 1);
+                          }
+                      }
+                      public void onChildChanged(DataSnapshot s, String prev) {}
+                      public void onChildRemoved(DataSnapshot s) {}
+                      public void onChildMoved(DataSnapshot s, String prev) {}
+                      public void onCancelled(DatabaseError e) {}
+                  });
+                  binding.btnSend.setOnClickListener(v -> sendMessage());
+              }
+              private void sendMessage() {
+                  String text = binding.etMessage.getText().toString().trim();
+                  if (text.isEmpty()) return;
+                  Map<String, Object> msg = new HashMap<>();
+                  msg.put("senderId", currentUid);
+                  msg.put("text", text);
+                  msg.put("timestamp", ServerValue.TIMESTAMP);
+                  messagesRef.push().setValue(msg);
+                  binding.etMessage.setText("");
+              }
+              @Override
+              public boolean onSupportNavigateUp() {
+                  finish();
+                  return true;
+              }
+          }
+          ENDOFFILE
+
+          # === CallActivity.java ===
+          cat > app/src/main/java/com/callx/app/activities/CallActivity.java << 'ENDOFFILE'
+          package com.callx.app.activities;
+          import android.os.Bundle;
+          import android.widget.Toast;
+          import androidx.appcompat.app.AppCompatActivity;
+          import com.callx.app.databinding.ActivityCallBinding;
+          import com.google.firebase.auth.FirebaseAuth;
+          import com.google.firebase.database.*;
+          import org.webrtc.*;
+          import java.util.*;
+          public class CallActivity extends AppCompatActivity {
+              private ActivityCallBinding binding;
+              private PeerConnectionFactory factory;
+              private PeerConnection peerConnection;
+              private EglBase eglBase;
+              private String currentUid, partnerUid, callType;
+              private boolean isCaller;
+              private boolean micEnabled = true, cameraEnabled = true;
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  binding = ActivityCallBinding.inflate(getLayoutInflater());
+                  setContentView(binding.getRoot());
+                  currentUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+                  partnerUid = getIntent().getStringExtra("partnerUid");
+                  callType = getIntent().getStringExtra("callType");
+                  isCaller = getIntent().getBooleanExtra("isCaller", true);
+                  String partnerName = getIntent().getStringExtra("partnerName");
+                  binding.tvCallerName.setText(partnerName != null ? partnerName : "Unknown");
+                  binding.tvCallStatus.setText("Connecting...");
+                  initWebRTC();
+                  binding.btnEndCall.setOnClickListener(v -> endCall());
+                  binding.btnToggleMic.setOnClickListener(v -> toggleMic());
+                  binding.btnToggleCamera.setOnClickListener(v -> toggleCamera());
+              }
+              private void initWebRTC() {
+                  eglBase = EglBase.create();
+                  PeerConnectionFactory.InitializationOptions options =
+                      PeerConnectionFactory.InitializationOptions.builder(this)
+                          .createInitializationOptions();
+                  PeerConnectionFactory.initialize(options);
+                  factory = PeerConnectionFactory.builder().createPeerConnectionFactory();
+                  binding.remoteVideo.init(eglBase.getEglBaseContext(), null);
+                  binding.localVideo.init(eglBase.getEglBaseContext(), null);
+                  binding.tvCallStatus.setText("Connected");
+              }
+              private void toggleMic() {
+                  micEnabled = !micEnabled;
+                  Toast.makeText(this, micEnabled ? "Mic On" : "Mic Off", Toast.LENGTH_SHORT).show();
+              }
+              private void toggleCamera() {
+                  cameraEnabled = !cameraEnabled;
+                  Toast.makeText(this, cameraEnabled ? "Camera On" : "Camera Off", Toast.LENGTH_SHORT).show();
+              }
+              private void endCall() {
+                  if (peerConnection != null) peerConnection.close();
+                  FirebaseDatabase.getInstance().getReference("calls").child(partnerUid).removeValue();
+                  finish();
+              }
+              @Override
+              protected void onDestroy() {
+                  super.onDestroy();
+                  binding.remoteVideo.release();
+                  binding.localVideo.release();
+                  if (eglBase != null) eglBase.release();
+              }
+          }
+          ENDOFFILE
+
+          # === Models ===
+          cat > app/src/main/java/com/callx/app/models/User.java << 'ENDOFFILE'
+          package com.callx.app.models;
+          public class User {
+              public String uid, name, emoji, callxId, email;
+              public User() {}
+              public User(String uid, String name, String emoji, String callxId, String email) {
+                  this.uid = uid; this.name = name; this.emoji = emoji;
+                  this.callxId = callxId; this.email = email;
+              }
+          }
+          ENDOFFILE
+
+          cat > app/src/main/java/com/callx/app/models/Message.java << 'ENDOFFILE'
+          package com.callx.app.models;
+          public class Message {
+              public String senderId, text;
+              public long timestamp;
+              public Message() {}
+              public Message(String senderId, String text, long timestamp) {
+                  this.senderId = senderId; this.text = text; this.timestamp = timestamp;
+              }
+          }
+          ENDOFFILE
+
+          # === Adapters ===
+          cat > app/src/main/java/com/callx/app/adapters/ViewPagerAdapter.java << 'ENDOFFILE'
+          package com.callx.app.adapters;
+          import androidx.annotation.NonNull;
+          import androidx.fragment.app.Fragment;
+          import androidx.fragment.app.FragmentActivity;
+          import androidx.viewpager2.adapter.FragmentStateAdapter;
+          import com.callx.app.fragments.CallsFragment;
+          import com.callx.app.fragments.ChatsFragment;
+          import com.callx.app.fragments.UpdatesFragment;
+          public class ViewPagerAdapter extends FragmentStateAdapter {
+              public ViewPagerAdapter(FragmentActivity fa) { super(fa); }
+              @NonNull @Override
+              public Fragment createFragment(int position) {
+                  switch (position) {
+                      case 1: return new UpdatesFragment();
+                      case 2: return new CallsFragment();
+                      default: return new ChatsFragment();
+                  }
+              }
+              @Override public int getItemCount() { return 3; }
+          }
+          ENDOFFILE
+
+          cat > app/src/main/java/com/callx/app/adapters/MessageAdapter.java << 'ENDOFFILE'
+          package com.callx.app.adapters;
+          import android.view.LayoutInflater;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.TextView;
+          import androidx.annotation.NonNull;
+          import androidx.recyclerview.widget.RecyclerView;
+          import com.callx.app.R;
+          import com.callx.app.models.Message;
+          import java.util.List;
+          public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MsgViewHolder> {
+              private List<Message> messages;
+              private String currentUid;
+              private static final int SENT = 1, RECEIVED = 2;
+              public MessageAdapter(List<Message> messages, String currentUid) {
+                  this.messages = messages; this.currentUid = currentUid;
+              }
+              @Override public int getItemViewType(int pos) {
+                  return messages.get(pos).senderId.equals(currentUid) ? SENT : RECEIVED;
+              }
+              @NonNull @Override
+              public MsgViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+                  int layout = viewType == SENT ? R.layout.item_message_sent : R.layout.item_message_received;
+                  View v = LayoutInflater.from(parent.getContext()).inflate(layout, parent, false);
+                  return new MsgViewHolder(v);
+              }
+              @Override public void onBindViewHolder(@NonNull MsgViewHolder h, int pos) {
+                  h.tvMessage.setText(messages.get(pos).text);
+              }
+              @Override public int getItemCount() { return messages.size(); }
+              static class MsgViewHolder extends RecyclerView.ViewHolder {
+                  TextView tvMessage;
+                  MsgViewHolder(View v) { super(v); tvMessage = v.findViewById(R.id.tv_message); }
+              }
+          }
+          ENDOFFILE
+
+          cat > app/src/main/java/com/callx/app/adapters/ContactAdapter.java << 'ENDOFFILE'
+          package com.callx.app.adapters;
+          import android.content.Intent;
+          import android.view.LayoutInflater;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.TextView;
+          import androidx.annotation.NonNull;
+          import androidx.recyclerview.widget.RecyclerView;
+          import com.callx.app.R;
+          import com.callx.app.activities.ChatActivity;
+          import com.callx.app.models.User;
+          import java.util.List;
+          public class ContactAdapter extends RecyclerView.Adapter<ContactAdapter.ContactVH> {
+              private List<User> users;
+              public ContactAdapter(List<User> users) { this.users = users; }
+              @NonNull @Override
+              public ContactVH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+                  View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_contact, parent, false);
+                  return new ContactVH(v);
+              }
+              @Override public void onBindViewHolder(@NonNull ContactVH h, int pos) {
+                  User user = users.get(pos);
+                  h.tvName.setText(user.name);
+                  h.tvAvatar.setText(user.emoji != null ? user.emoji : "😊");
+                  h.itemView.setOnClickListener(v -> {
+                      Intent i = new Intent(v.getContext(), ChatActivity.class);
+                      i.putExtra("partnerUid", user.uid);
+                      i.putExtra("partnerName", user.name);
+                      v.getContext().startActivity(i);
+                  });
+              }
+              @Override public int getItemCount() { return users.size(); }
+              static class ContactVH extends RecyclerView.ViewHolder {
+                  TextView tvName, tvAvatar, tvLastMessage, tvUnread;
+                  ContactVH(View v) {
+                      super(v);
+                      tvAvatar = v.findViewById(R.id.tv_avatar);
+                      tvName = v.findViewById(R.id.tv_name);
+                      tvLastMessage = v.findViewById(R.id.tv_last_message);
+                      tvUnread = v.findViewById(R.id.tv_unread);
+                  }
+              }
+          }
+          ENDOFFILE
+
+          # === Fragments ===
+          cat > app/src/main/java/com/callx/app/fragments/ChatsFragment.java << 'ENDOFFILE'
+          package com.callx.app.fragments;
+          import android.os.Bundle;
+          import android.view.LayoutInflater;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import androidx.fragment.app.Fragment;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+          import com.callx.app.R;
+          import com.callx.app.adapters.ContactAdapter;
+          import com.callx.app.models.User;
+          import com.google.firebase.auth.FirebaseAuth;
+          import com.google.firebase.database.*;
+          import java.util.ArrayList;
+          import java.util.List;
+          public class ChatsFragment extends Fragment {
+              private RecyclerView rv;
+              private ContactAdapter adapter;
+              private List<User> contacts = new ArrayList<>();
+              private String currentUid;
+              @Override
+              public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+                  View view = inflater.inflate(R.layout.fragment_chats, container, false);
+                  rv = view.findViewById(R.id.rv_chats);
+                  rv.setLayoutManager(new LinearLayoutManager(getContext()));
+                  adapter = new ContactAdapter(contacts);
+                  rv.setAdapter(adapter);
+                  currentUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+                  loadContacts();
+                  return view;
+              }
+              private void loadContacts() {
+                  FirebaseDatabase.getInstance().getReference("contacts").child(currentUid)
+                      .addValueEventListener(new ValueEventListener() {
+                          public void onDataChange(DataSnapshot snapshot) {
+                              contacts.clear();
+                              for (DataSnapshot child : snapshot.getChildren()) {
+                                  User user = child.getValue(User.class);
+                                  if (user != null) contacts.add(user);
+                              }
+                              adapter.notifyDataSetChanged();
+                          }
+                          public void onCancelled(DatabaseError e) {}
+                      });
+              }
+          }
+          ENDOFFILE
+
+          cat > app/src/main/java/com/callx/app/fragments/UpdatesFragment.java << 'ENDOFFILE'
+          package com.callx.app.fragments;
+          import android.os.Bundle;
+          import android.view.*;
+          import androidx.fragment.app.Fragment;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+          import com.callx.app.R;
+          import com.google.firebase.auth.FirebaseAuth;
+          import com.google.firebase.database.*;
+          public class UpdatesFragment extends Fragment {
+              private RecyclerView rv;
+              @Override
+              public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+                  View view = inflater.inflate(R.layout.fragment_updates, container, false);
+                  rv = view.findViewById(R.id.rv_requests);
+                  rv.setLayoutManager(new LinearLayoutManager(getContext()));
+                  return view;
+              }
+          }
+          ENDOFFILE
+
+          cat > app/src/main/java/com/callx/app/fragments/CallsFragment.java << 'ENDOFFILE'
+          package com.callx.app.fragments;
+          import android.os.Bundle;
+          import android.view.*;
+          import androidx.fragment.app.Fragment;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+          import com.callx.app.R;
+          public class CallsFragment extends Fragment {
+              private RecyclerView rv;
+              @Override
+              public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+                  View view = inflater.inflate(R.layout.fragment_calls, container, false);
+                  rv = view.findViewById(R.id.rv_calls);
+                  rv.setLayoutManager(new LinearLayoutManager(getContext()));
+                  return view;
+              }
+          }
+          ENDOFFILE
+
+          # === utils ===
+          cat > app/src/main/java/com/callx/app/utils/FirebaseUtils.java << 'ENDOFFILE'
+          package com.callx.app.utils;
+          import com.google.firebase.auth.FirebaseAuth;
+          import com.google.firebase.database.DatabaseReference;
+          import com.google.firebase.database.FirebaseDatabase;
+          import java.util.Arrays;
+          public class FirebaseUtils {
+              public static String getCurrentUid() {
+                  return FirebaseAuth.getInstance().getCurrentUser().getUid();
+              }
+              public static DatabaseReference getUserRef(String uid) {
+                  return FirebaseDatabase.getInstance().getReference("users").child(uid);
+              }
+              public static DatabaseReference getMessagesRef(String chatId) {
+                  return FirebaseDatabase.getInstance().getReference("messages").child(chatId);
+              }
+              public static DatabaseReference getContactsRef(String uid) {
+                  return FirebaseDatabase.getInstance().getReference("contacts").child(uid);
+              }
+              public static DatabaseReference getRequestsRef(String uid) {
+                  return FirebaseDatabase.getInstance().getReference("requests").child(uid);
+              }
+              public static DatabaseReference getCallsRef(String uid) {
+                  return FirebaseDatabase.getInstance().getReference("calls").child(uid);
+              }
+              public static String getChatId(String uid1, String uid2) {
+                  String[] ids = {uid1, uid2};
+                  Arrays.sort(ids);
+                  return ids[0] + "_" + ids[1];
+              }
+          }
+          ENDOFFILE
+
+          echo "✅ All files created!"
+
+      - name: Setup Gradle Wrapper
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.4'
+
+      - name: Generate gradlew
+        run: gradle wrapper --gradle-version 8.4
+
+      - name: Commit all files to repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "🚀 Setup complete CallX Android project"
+          git push
+
+      - name: Build Debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: callx-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
