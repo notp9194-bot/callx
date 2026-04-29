@@ -8139,11 +8139,48 @@ jobs:
           ENDOFFILE
 
           # ============================================================
-          # Final build step
+          # Final build step — Debug APK FIRST (always succeeds, easy install),
+          # then attempt Release APK + AAB.
           # ============================================================
-          ./gradlew assembleRelease --stacktrace || ./gradlew assembleDebug --stacktrace || true
+          echo "::group::Build DEBUG APK"
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon
+          DEBUG_RC=$?
+          echo "Debug build exit=${DEBUG_RC}"
+          echo "::endgroup::"
 
-      - name: Upload APK
+          echo "::group::Build RELEASE APK + AAB (best-effort)"
+          ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace --no-daemon || \
+            echo "Release build failed — debug APK is still available."
+          echo "::endgroup::"
+
+          # Surface the produced artifacts in the log
+          echo "----- Built artifacts -----"
+          find app/build/outputs -type f \( -name "*.apk" -o -name "*.aab" \) -print 2>/dev/null || true
+
+          if [ "${DEBUG_RC}" != "0" ]; then
+            echo "::error::Debug APK build failed"
+            exit ${DEBUG_RC}
+          fi
+
+      - name: Upload Debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CallX-v4-Debug-APK
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+
+      - name: Upload Release APK + AAB
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CallX-v4-Release-APK
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
+          if-no-files-found: warn
+
+      - name: Upload All APK/AAB (combined)
         if: always()
         uses: actions/upload-artifact@v4
         with:
