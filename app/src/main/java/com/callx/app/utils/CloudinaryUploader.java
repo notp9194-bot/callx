@@ -46,12 +46,13 @@ public class CloudinaryUploader {
                 String ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime);
                 if (ext == null || ext.isEmpty()) ext = "bin";
                 String filename = "upload." + ext;
-                if (resourceType == null || resourceType.isEmpty()) resourceType = "auto";
+                final String rType = (resourceType == null || resourceType.isEmpty())
+                    ? "auto" : resourceType;
 
                 // Step 1 — sign
                 JSONObject payload = new JSONObject()
                     .put("folder", folder == null ? "callx" : folder)
-                    .put("resource_type", resourceType);
+                    .put("resource_type", rType);
                 Request signReq = new Request.Builder()
                     .url(Constants.SERVER_URL + "/cloudinary/sign")
                     .post(RequestBody.create(payload.toString(),
@@ -73,7 +74,7 @@ public class CloudinaryUploader {
                 String cloudName = signJson.optString("cloud_name",
                     Constants.CLOUDINARY_CLOUD_NAME);
                 String f         = signJson.optString("folder", "callx");
-                String rt        = signJson.optString("resource_type", resourceType);
+                String rt        = signJson.optString("resource_type", rType);
 
                 // Step 2 — direct upload
                 MultipartBody.Builder mp = new MultipartBody.Builder()
