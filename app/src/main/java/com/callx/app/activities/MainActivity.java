@@ -32,7 +32,7 @@ public class MainActivity extends AppCompatActivity {
             startActivity(new Intent(this, SearchActivity.class)));
         // Apna CallX ID dikhao
         String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
-        FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("users").child(uid)
+        FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("users").child(uid)
             .addListenerForSingleValueEvent(new ValueEventListener() {
                 public void onDataChange(DataSnapshot snap) {
                     String id = snap.child("callxId").getValue(String.class);

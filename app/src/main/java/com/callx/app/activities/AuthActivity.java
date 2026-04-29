@@ -51,7 +51,7 @@ public class AuthActivity extends AppCompatActivity {
                         data.put("name", name);
                         data.put("emoji", "😊");
                         data.put("callxId", callxId);
-                        FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("users")
+                        FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("users")
                             .child(user.getUid()).setValue(data)
                             .addOnSuccessListener(x -> {
                                 Toast.makeText(this,

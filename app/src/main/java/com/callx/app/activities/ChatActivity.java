@@ -31,7 +31,7 @@ public class ChatActivity extends AppCompatActivity {
         adapter = new MessageAdapter(messages, currentUid);
         binding.rvMessages.setLayoutManager(new LinearLayoutManager(this));
         binding.rvMessages.setAdapter(adapter);
-        messagesRef = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("messages").child(chatId);
+        messagesRef = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("messages").child(chatId);
         messagesRef.addChildEventListener(new ChildEventListener() {
             public void onChildAdded(DataSnapshot s, String prev) {
                 Message msg = s.getValue(Message.class);

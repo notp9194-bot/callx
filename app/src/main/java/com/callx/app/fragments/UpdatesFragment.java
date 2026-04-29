@@ -20,7 +20,7 @@ public class UpdatesFragment extends Fragment {
         return view;
     }
     private void loadRequests() {
-        FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("requests").child(currentUid)
+        FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("requests").child(currentUid)
             .addValueEventListener(new ValueEventListener() {
                 public void onDataChange(DataSnapshot snapshot) {
                     llContainer.removeAllViews();
@@ -54,7 +54,7 @@ public class UpdatesFragment extends Fragment {
         llContainer.addView(card);
     }
     private void acceptRequest(String fromUid, String fromName) {
-        DatabaseReference db = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference();
+        DatabaseReference db = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference();
         String myName = FirebaseAuth.getInstance().getCurrentUser().getDisplayName();
         if (myName == null || myName.isEmpty()) myName = "CallX User";
         // Dono ke contacts mein add karo
@@ -70,7 +70,7 @@ public class UpdatesFragment extends Fragment {
             fromName + " contact mein add ho gaya! ✅", Toast.LENGTH_SHORT).show();
     }
     private void rejectRequest(String fromUid) {
-        FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("requests")
+        FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("requests")
             .child(currentUid).child(fromUid).removeValue();
         Toast.makeText(getContext(), "Request reject kar di", Toast.LENGTH_SHORT).show();
     }

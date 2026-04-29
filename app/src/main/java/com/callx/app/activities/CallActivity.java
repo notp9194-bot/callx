@@ -53,7 +53,7 @@ public class CallActivity extends AppCompatActivity {
     }
     private void endCall() {
         if (peerConnection != null) peerConnection.close();
-        FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.firebaseio.com").getReference("calls").child(partnerUid).removeValue();
+        FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("calls").child(partnerUid).removeValue();
         finish();
     }
     @Override
