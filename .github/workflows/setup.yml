@@ -7301,7 +7301,12 @@ jobs:
               repositories { gradlePluginPortal(); google(); mavenCentral() }
           }
           dependencyResolutionManagement {
-              repositories { google(); mavenCentral() }
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url "https://repo.getstream.io/artifactory/libs-release/" }
+                  maven { url "https://jitpack.io" }
+              }
           }
           rootProject.name = "CallX"
           include ':app'
