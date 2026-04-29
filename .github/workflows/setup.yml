@@ -31,6 +31,7 @@ jobs:
           mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/res/values
           mkdir -p app/src/main/res/menu
+          mkdir -p app/src/main/res/xml
 
           # ============================================================
           # google-services.json
@@ -140,12 +141,24 @@ jobs:
                   applicationId "com.callx.app"
                   minSdk 21
                   targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
+                  versionCode 2
+                  versionName "1.1"
+                  vectorDrawables.useSupportLibrary = true
               }
               buildTypes {
-                  debug { minifyEnabled false }
-                  release { minifyEnabled false }
+                  debug {
+                      minifyEnabled false
+                      debuggable true
+                      applicationIdSuffix ".debug"
+                      versionNameSuffix "-debug"
+                  }
+                  release {
+                      minifyEnabled true
+                      shrinkResources true
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                      // Debug signing for now — production me apna release keystore daalna
+                      signingConfig signingConfigs.debug
+                  }
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -153,6 +166,21 @@ jobs:
               }
               buildFeatures {
                   viewBinding true
+              }
+              packagingOptions {
+                  resources {
+                      excludes += [
+                          'META-INF/AL2.0',
+                          'META-INF/LGPL2.1',
+                          'META-INF/DEPENDENCIES',
+                          'META-INF/LICENSE*',
+                          'META-INF/NOTICE*'
+                      ]
+                  }
+              }
+              lint {
+                  checkReleaseBuilds false
+                  abortOnError false
               }
           }
           dependencies {
@@ -162,11 +190,16 @@ jobs:
               implementation 'androidx.recyclerview:recyclerview:1.3.2'
               implementation 'androidx.viewpager2:viewpager2:1.0.0'
               implementation 'androidx.cardview:cardview:1.0.0'
+              implementation 'androidx.activity:activity:1.8.2'
               implementation platform('com.google.firebase:firebase-bom:32.7.0')
               implementation 'com.google.firebase:firebase-auth'
               implementation 'com.google.firebase:firebase-database'
               implementation 'com.google.firebase:firebase-messaging'
               implementation 'io.getstream:stream-webrtc-android:1.1.2'
+              // Networking + image loading
+              implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+              implementation 'com.github.bumptech.glide:glide:4.16.0'
+              annotationProcessor 'com.github.bumptech.glide:compiler:4.16.0'
           }
           ENDOFFILE
 
@@ -188,10 +221,19 @@ jobs:
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
               <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+              <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+                  android:maxSdkVersion="32"/>
               <application
-                  android:allowBackup="true"
+                  android:name=".CallxApp"
+                  android:allowBackup="false"
+                  android:dataExtractionRules="@xml/data_extraction_rules"
+                  android:fullBackupContent="false"
                   android:label="CallX"
                   android:theme="@style/Theme.CallX"
+                  android:networkSecurityConfig="@xml/network_security_config"
+                  android:usesCleartextTraffic="false"
                   android:supportsRtl="true">
                   <activity
                       android:name=".activities.AuthActivity"
@@ -544,6 +586,13 @@ jobs:
                   android:background="#e5ddd5"
                   android:padding="8dp"
                   android:clipToPadding="false"/>
+              <ProgressBar
+                  android:id="@+id/upload_progress"
+                  style="?android:attr/progressBarStyleHorizontal"
+                  android:layout_width="match_parent"
+                  android:layout_height="4dp"
+                  android:indeterminate="true"
+                  android:visibility="gone"/>
               <LinearLayout
                   android:layout_width="match_parent"
                   android:layout_height="wrap_content"
@@ -551,6 +600,14 @@ jobs:
                   android:padding="8dp"
                   android:background="#ffffff"
                   android:gravity="center_vertical">
+                  <ImageButton
+                      android:id="@+id/btn_attach"
+                      android:layout_width="44dp"
+                      android:layout_height="44dp"
+                      android:src="@android:drawable/ic_menu_gallery"
+                      android:background="?attr/selectableItemBackgroundBorderless"
+                      android:contentDescription="Attach image"
+                      android:tint="#005c97"/>
                   <EditText
                       android:id="@+id/et_message"
                       android:layout_width="0dp"
@@ -825,15 +882,26 @@ jobs:
               android:layout_width="match_parent"
               android:layout_height="wrap_content"
               android:gravity="end"
+              android:orientation="vertical"
               android:padding="4dp">
               <TextView
                   android:id="@+id/tv_message"
                   android:layout_width="wrap_content"
                   android:layout_height="wrap_content"
+                  android:layout_gravity="end"
                   android:background="@drawable/bubble_sent"
                   android:padding="10dp"
                   android:textColor="#111b21"
                   android:maxWidth="260dp"/>
+              <ImageView
+                  android:id="@+id/iv_image"
+                  android:layout_width="220dp"
+                  android:layout_height="220dp"
+                  android:layout_gravity="end"
+                  android:scaleType="centerCrop"
+                  android:background="@drawable/bubble_sent"
+                  android:padding="4dp"
+                  android:visibility="gone"/>
           </LinearLayout>
           ENDOFFILE
 
@@ -844,15 +912,26 @@ jobs:
               android:layout_width="match_parent"
               android:layout_height="wrap_content"
               android:gravity="start"
+              android:orientation="vertical"
               android:padding="4dp">
               <TextView
                   android:id="@+id/tv_message"
                   android:layout_width="wrap_content"
                   android:layout_height="wrap_content"
+                  android:layout_gravity="start"
                   android:background="@drawable/bubble_received"
                   android:padding="10dp"
                   android:textColor="#111b21"
                   android:maxWidth="260dp"/>
+              <ImageView
+                  android:id="@+id/iv_image"
+                  android:layout_width="220dp"
+                  android:layout_height="220dp"
+                  android:layout_gravity="start"
+                  android:scaleType="centerCrop"
+                  android:background="@drawable/bubble_received"
+                  android:padding="4dp"
+                  android:visibility="gone"/>
           </LinearLayout>
           ENDOFFILE
 
@@ -1123,9 +1202,10 @@ jobs:
           public class ChatActivity extends AppCompatActivity {
               private ActivityChatBinding binding;
               private MessageAdapter adapter;
-              private List<Message> messages = new ArrayList<>();
-              private String chatId, currentUid, partnerUid;
+              private final List<Message> messages = new ArrayList<>();
+              private String chatId, currentUid, partnerUid, partnerName;
               private DatabaseReference messagesRef;
+              private androidx.activity.result.ActivityResultLauncher<String> pickImageLauncher;
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
@@ -1135,7 +1215,7 @@ jobs:
                   getSupportActionBar().setDisplayHomeAsUpEnabled(true);
                   currentUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
                   partnerUid = getIntent().getStringExtra("partnerUid");
-                  String partnerName = getIntent().getStringExtra("partnerName");
+                  partnerName = getIntent().getStringExtra("partnerName");
                   binding.toolbar.setTitle(partnerName != null ? partnerName : "Chat");
                   String[] ids = {currentUid, partnerUid};
                   Arrays.sort(ids);
@@ -1143,7 +1223,8 @@ jobs:
                   adapter = new MessageAdapter(messages, currentUid);
                   binding.rvMessages.setLayoutManager(new LinearLayoutManager(this));
                   binding.rvMessages.setAdapter(adapter);
-                  messagesRef = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("messages").child(chatId);
+                  messagesRef = FirebaseDatabase.getInstance(com.callx.app.utils.Constants.DB_URL)
+                      .getReference("messages").child(chatId);
                   messagesRef.addChildEventListener(new ChildEventListener() {
                       public void onChildAdded(DataSnapshot s, String prev) {
                           Message msg = s.getValue(Message.class);
@@ -1158,7 +1239,12 @@ jobs:
                       public void onChildMoved(DataSnapshot s, String prev) {}
                       public void onCancelled(DatabaseError e) {}
                   });
+                  // Image picker launcher (system gallery — no runtime perm needed)
+                  pickImageLauncher = registerForActivityResult(
+                      new androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+                      uri -> { if (uri != null) uploadAndSendImage(uri); });
                   binding.btnSend.setOnClickListener(v -> sendMessage());
+                  binding.btnAttach.setOnClickListener(v -> pickImageLauncher.launch("image/*"));
               }
               private void sendMessage() {
                   String text = binding.etMessage.getText().toString().trim();
@@ -1166,13 +1252,41 @@ jobs:
                   Map<String, Object> msg = new HashMap<>();
                   msg.put("senderId", currentUid);
                   msg.put("text", text);
+                  msg.put("type", "text");
                   msg.put("timestamp", ServerValue.TIMESTAMP);
                   messagesRef.push().setValue(msg);
                   binding.etMessage.setText("");
-                  // Receiver ko FCM push (background/killed me bhi notif)
                   String myName = FirebaseAuth.getInstance().getCurrentUser().getDisplayName();
                   if (myName == null || myName.isEmpty()) myName = "CallX User";
                   pushNotify(partnerUid, currentUid, myName, "message", text);
+              }
+              private void uploadAndSendImage(android.net.Uri uri) {
+                  binding.uploadProgress.setVisibility(android.view.View.VISIBLE);
+                  binding.btnAttach.setEnabled(false);
+                  String folder = "callx/" + chatId;
+                  com.callx.app.utils.CloudinaryUploader.upload(this, uri, folder,
+                      new com.callx.app.utils.CloudinaryUploader.UploadCallback() {
+                          @Override public void onSuccess(String secureUrl) {
+                              binding.uploadProgress.setVisibility(android.view.View.GONE);
+                              binding.btnAttach.setEnabled(true);
+                              Map<String, Object> msg = new HashMap<>();
+                              msg.put("senderId", currentUid);
+                              msg.put("imageUrl", secureUrl);
+                              msg.put("type", "image");
+                              msg.put("timestamp", ServerValue.TIMESTAMP);
+                              messagesRef.push().setValue(msg);
+                              String myName = FirebaseAuth.getInstance().getCurrentUser().getDisplayName();
+                              if (myName == null || myName.isEmpty()) myName = "CallX User";
+                              pushNotify(partnerUid, currentUid, myName, "message", "📷 Photo");
+                          }
+                          @Override public void onError(String message) {
+                              binding.uploadProgress.setVisibility(android.view.View.GONE);
+                              binding.btnAttach.setEnabled(true);
+                              android.widget.Toast.makeText(ChatActivity.this,
+                                  "Upload fail: " + message,
+                                  android.widget.Toast.LENGTH_LONG).show();
+                          }
+                      });
               }
               private void pushNotify(String toUid, String fromUid,
                                       String fromName, String type, String text) {
@@ -1475,11 +1589,23 @@ jobs:
           cat > app/src/main/java/com/callx/app/models/Message.java << 'ENDOFFILE'
           package com.callx.app.models;
           public class Message {
-              public String senderId, text;
+              // type: "text" | "image"
+              public String senderId, text, type, imageUrl;
               public long timestamp;
               public Message() {}
               public Message(String senderId, String text, long timestamp) {
-                  this.senderId = senderId; this.text = text; this.timestamp = timestamp;
+                  this.senderId = senderId;
+                  this.text = text;
+                  this.timestamp = timestamp;
+                  this.type = "text";
+              }
+              public static Message image(String senderId, String imageUrl, long timestamp) {
+                  Message m = new Message();
+                  m.senderId = senderId;
+                  m.imageUrl = imageUrl;
+                  m.type = "image";
+                  m.timestamp = timestamp;
+                  return m;
               }
           }
           ENDOFFILE
@@ -1512,22 +1638,27 @@ jobs:
 
           cat > app/src/main/java/com/callx/app/adapters/MessageAdapter.java << 'ENDOFFILE'
           package com.callx.app.adapters;
+          import android.content.Intent;
+          import android.net.Uri;
           import android.view.*;
+          import android.widget.ImageView;
           import android.widget.TextView;
           import androidx.annotation.NonNull;
           import androidx.recyclerview.widget.RecyclerView;
+          import com.bumptech.glide.Glide;
           import com.callx.app.R;
           import com.callx.app.models.Message;
           import java.util.List;
           public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MsgViewHolder> {
-              private List<Message> messages;
-              private String currentUid;
+              private final List<Message> messages;
+              private final String currentUid;
               private static final int SENT = 1, RECEIVED = 2;
               public MessageAdapter(List<Message> messages, String currentUid) {
                   this.messages = messages; this.currentUid = currentUid;
               }
               @Override public int getItemViewType(int pos) {
-                  return messages.get(pos).senderId.equals(currentUid) ? SENT : RECEIVED;
+                  Message m = messages.get(pos);
+                  return (m.senderId != null && m.senderId.equals(currentUid)) ? SENT : RECEIVED;
               }
               @NonNull @Override
               public MsgViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
@@ -1537,12 +1668,38 @@ jobs:
                   return new MsgViewHolder(v);
               }
               @Override public void onBindViewHolder(@NonNull MsgViewHolder h, int pos) {
-                  h.tvMessage.setText(messages.get(pos).text);
+                  Message m = messages.get(pos);
+                  boolean isImage = "image".equals(m.type)
+                      && m.imageUrl != null && !m.imageUrl.isEmpty();
+                  if (isImage) {
+                      h.tvMessage.setVisibility(View.GONE);
+                      h.ivImage.setVisibility(View.VISIBLE);
+                      Glide.with(h.itemView.getContext())
+                          .load(m.imageUrl)
+                          .placeholder(android.R.drawable.ic_menu_gallery)
+                          .error(android.R.drawable.stat_notify_error)
+                          .into(h.ivImage);
+                      h.ivImage.setOnClickListener(v -> {
+                          try {
+                              v.getContext().startActivity(
+                                  new Intent(Intent.ACTION_VIEW, Uri.parse(m.imageUrl)));
+                          } catch (Exception ignored) {}
+                      });
+                  } else {
+                      h.ivImage.setVisibility(View.GONE);
+                      h.tvMessage.setVisibility(View.VISIBLE);
+                      h.tvMessage.setText(m.text != null ? m.text : "");
+                  }
               }
               @Override public int getItemCount() { return messages.size(); }
               static class MsgViewHolder extends RecyclerView.ViewHolder {
                   TextView tvMessage;
-                  MsgViewHolder(View v) { super(v); tvMessage = v.findViewById(R.id.tv_message); }
+                  ImageView ivImage;
+                  MsgViewHolder(View v) {
+                      super(v);
+                      tvMessage = v.findViewById(R.id.tv_message);
+                      ivImage   = v.findViewById(R.id.iv_image);
+                  }
               }
           }
           ENDOFFILE
@@ -1795,7 +1952,7 @@ jobs:
           ENDOFFILE
 
           # ============================================================
-          # JAVA — Constants.java  (DB URL + Render server URL)
+          # JAVA — Constants.java  (DB URL + Render server URL + Cloudinary)
           # ============================================================
           cat > app/src/main/java/com/callx/app/utils/Constants.java << 'ENDOFFILE'
           package com.callx.app.utils;
@@ -1803,13 +1960,250 @@ jobs:
               // Firebase Realtime DB
               public static final String DB_URL =
                   "https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app";
-              // Apna Render server URL yahan daalo (deploy ke baad)
+              // Render Node server
               public static final String SERVER_URL =
                   "https://callx-server.onrender.com";
+              // Cloudinary (public — secret server-side)
+              public static final String CLOUDINARY_CLOUD_NAME = "dvqqgqdls";
+              public static final String CLOUDINARY_UPLOAD_URL =
+                  "https://api.cloudinary.com/v1_1/" + CLOUDINARY_CLOUD_NAME + "/auto/upload";
               // Notification channels
               public static final String CHANNEL_CALLS    = "callx_calls";
               public static final String CHANNEL_MESSAGES = "callx_messages";
+              // Networking
+              public static final int HTTP_TIMEOUT_MS = 15000;
+              private Constants() {}
           }
+          ENDOFFILE
+
+          # ============================================================
+          # JAVA — CallxApp.java  (Application class for one-time init)
+          # ============================================================
+          cat > app/src/main/java/com/callx/app/CallxApp.java << 'ENDOFFILE'
+          package com.callx.app;
+          import android.app.Application;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.media.AudioAttributes;
+          import android.media.RingtoneManager;
+          import android.os.Build;
+          import android.util.Log;
+          import com.callx.app.utils.Constants;
+          import com.google.firebase.database.FirebaseDatabase;
+          public class CallxApp extends Application {
+              private static final String TAG = "CallxApp";
+              @Override
+              public void onCreate() {
+                  super.onCreate();
+                  // Offline persistence — must be called once before any DB usage
+                  try {
+                      FirebaseDatabase.getInstance(Constants.DB_URL)
+                          .setPersistenceEnabled(true);
+                  } catch (Exception e) {
+                      Log.w(TAG, "Persistence already enabled: " + e.getMessage());
+                  }
+                  createChannels();
+              }
+              private void createChannels() {
+                  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+                  NotificationManager nm =
+                      (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                  if (nm == null) return;
+                  NotificationChannel calls = new NotificationChannel(
+                      Constants.CHANNEL_CALLS, "Incoming Calls",
+                      NotificationManager.IMPORTANCE_HIGH);
+                  AudioAttributes attrs = new AudioAttributes.Builder()
+                      .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                      .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                      .build();
+                  calls.setSound(
+                      RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), attrs);
+                  calls.enableVibration(true);
+                  calls.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+                  nm.createNotificationChannel(calls);
+                  NotificationChannel msgs = new NotificationChannel(
+                      Constants.CHANNEL_MESSAGES, "Messages",
+                      NotificationManager.IMPORTANCE_HIGH);
+                  nm.createNotificationChannel(msgs);
+              }
+          }
+          ENDOFFILE
+
+          # ============================================================
+          # JAVA — CloudinaryUploader.java  (signed upload helper)
+          # ============================================================
+          cat > app/src/main/java/com/callx/app/utils/CloudinaryUploader.java << 'ENDOFFILE'
+          package com.callx.app.utils;
+          import android.content.Context;
+          import android.net.Uri;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.util.Log;
+          import okhttp3.*;
+          import org.json.JSONObject;
+          import java.io.ByteArrayOutputStream;
+          import java.io.IOException;
+          import java.io.InputStream;
+          import java.util.concurrent.TimeUnit;
+          public class CloudinaryUploader {
+              private static final String TAG = "Cloudinary";
+              public interface UploadCallback {
+                  void onSuccess(String secureUrl);
+                  void onError(String message);
+              }
+              private static final OkHttpClient client = new OkHttpClient.Builder()
+                  .connectTimeout(20, TimeUnit.SECONDS)
+                  .readTimeout(60, TimeUnit.SECONDS)
+                  .writeTimeout(120, TimeUnit.SECONDS)
+                  .build();
+              public static void upload(Context ctx, Uri uri, String folder, UploadCallback cb) {
+                  new Thread(() -> {
+                      try {
+                          // 1. Read image bytes from URI
+                          byte[] bytes = readBytes(ctx, uri);
+                          if (bytes == null || bytes.length == 0) {
+                              post(cb, false, null, "Empty file");
+                              return;
+                          }
+                          // 2. Get signature from server
+                          JSONObject signReqBody = new JSONObject();
+                          if (folder != null) signReqBody.put("folder", folder);
+                          Request signReq = new Request.Builder()
+                              .url(Constants.SERVER_URL + "/cloudinary/sign")
+                              .post(RequestBody.create(
+                                  signReqBody.toString(),
+                                  MediaType.parse("application/json")))
+                              .build();
+                          Response signRes = client.newCall(signReq).execute();
+                          if (!signRes.isSuccessful()) {
+                              post(cb, false, null, "Sign failed: " + signRes.code());
+                              return;
+                          }
+                          JSONObject signJson = new JSONObject(signRes.body().string());
+                          signRes.close();
+                          String signature = signJson.getString("signature");
+                          String timestamp = String.valueOf(signJson.getLong("timestamp"));
+                          String apiKey    = signJson.getString("api_key");
+                          String cloudName = signJson.optString("cloud_name",
+                              Constants.CLOUDINARY_CLOUD_NAME);
+                          String f         = signJson.optString("folder", "callx");
+                          // 3. Upload directly to Cloudinary
+                          MultipartBody.Builder mp = new MultipartBody.Builder()
+                              .setType(MultipartBody.FORM)
+                              .addFormDataPart("file", "upload.jpg",
+                                  RequestBody.create(bytes,
+                                      MediaType.parse("application/octet-stream")))
+                              .addFormDataPart("api_key", apiKey)
+                              .addFormDataPart("timestamp", timestamp)
+                              .addFormDataPart("signature", signature)
+                              .addFormDataPart("folder", f);
+                          Request upReq = new Request.Builder()
+                              .url("https://api.cloudinary.com/v1_1/" + cloudName + "/auto/upload")
+                              .post(mp.build())
+                              .build();
+                          Response upRes = client.newCall(upReq).execute();
+                          String body = upRes.body() != null ? upRes.body().string() : "";
+                          upRes.close();
+                          if (!upRes.isSuccessful()) {
+                              Log.e(TAG, "Upload failed: " + body);
+                              post(cb, false, null, "Upload failed: " + upRes.code());
+                              return;
+                          }
+                          JSONObject upJson = new JSONObject(body);
+                          String secureUrl = upJson.optString("secure_url",
+                              upJson.optString("url"));
+                          if (secureUrl == null || secureUrl.isEmpty()) {
+                              post(cb, false, null, "No URL in response");
+                              return;
+                          }
+                          post(cb, true, secureUrl, null);
+                      } catch (Exception e) {
+                          Log.e(TAG, "Upload error", e);
+                          post(cb, false, null, e.getMessage());
+                      }
+                  }).start();
+              }
+              private static byte[] readBytes(Context ctx, Uri uri) throws IOException {
+                  try (InputStream is = ctx.getContentResolver().openInputStream(uri)) {
+                      if (is == null) return null;
+                      ByteArrayOutputStream out = new ByteArrayOutputStream();
+                      byte[] buf = new byte[8192];
+                      int n;
+                      while ((n = is.read(buf)) > 0) out.write(buf, 0, n);
+                      return out.toByteArray();
+                  }
+              }
+              private static void post(UploadCallback cb, boolean ok,
+                                       String url, String err) {
+                  new Handler(Looper.getMainLooper()).post(() -> {
+                      if (ok) cb.onSuccess(url);
+                      else cb.onError(err);
+                  });
+              }
+              private CloudinaryUploader() {}
+          }
+          ENDOFFILE
+
+          # ============================================================
+          # XML — network_security_config.xml  (HTTPS only)
+          # ============================================================
+          cat > app/src/main/res/xml/network_security_config.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+              <base-config cleartextTrafficPermitted="false">
+                  <trust-anchors>
+                      <certificates src="system"/>
+                  </trust-anchors>
+              </base-config>
+          </network-security-config>
+          ENDOFFILE
+
+          # ============================================================
+          # XML — data_extraction_rules.xml
+          # ============================================================
+          cat > app/src/main/res/xml/data_extraction_rules.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <data-extraction-rules>
+              <cloud-backup>
+                  <exclude domain="sharedpref" path="."/>
+              </cloud-backup>
+              <device-transfer>
+                  <exclude domain="sharedpref" path="."/>
+              </device-transfer>
+          </data-extraction-rules>
+          ENDOFFILE
+
+          # ============================================================
+          # PROGUARD — release minify rules
+          # ============================================================
+          cat > app/proguard-rules.pro << 'ENDOFFILE'
+          # Keep model classes for Firebase deserialization
+          -keep class com.callx.app.models.** { *; }
+          -keepclassmembers class com.callx.app.models.** { *; }
+          # Firebase
+          -keep class com.google.firebase.** { *; }
+          -keep class com.google.android.gms.** { *; }
+          -dontwarn com.google.firebase.**
+          # WebRTC
+          -keep class org.webrtc.** { *; }
+          -dontwarn org.webrtc.**
+          # OkHttp
+          -dontwarn okhttp3.**
+          -dontwarn okio.**
+          -dontwarn javax.annotation.**
+          -dontwarn org.conscrypt.**
+          # Glide
+          -keep public class * implements com.bumptech.glide.module.GlideModule
+          -keep class * extends com.bumptech.glide.module.AppGlideModule { <init>(...); }
+          -keep public enum com.bumptech.glide.load.ImageHeaderParser$** { **[] $VALUES; public *; }
+          -keep class com.bumptech.glide.GeneratedAppGlideModuleImpl
+          # Activities / services / app class
+          -keep class com.callx.app.CallxApp { *; }
+          -keep class com.callx.app.activities.** { *; }
+          -keep class com.callx.app.services.** { *; }
+          # JSON / Gson-style
+          -keepattributes Signature
+          -keepattributes *Annotation*
           ENDOFFILE
 
           # ============================================================
@@ -2099,8 +2493,8 @@ jobs:
           cat > server/package.json << 'ENDOFFILE'
           {
             "name": "callx-server",
-            "version": "1.0.0",
-            "description": "CallX FCM notification server",
+            "version": "1.1.0",
+            "description": "CallX FCM + Cloudinary signing server",
             "main": "index.js",
             "scripts": {
               "start": "node index.js"
@@ -2109,55 +2503,99 @@ jobs:
               "node": ">=18"
             },
             "dependencies": {
+              "cloudinary": "^2.5.1",
+              "compression": "^1.7.4",
+              "cors": "^2.8.5",
               "express": "^4.19.2",
-              "firebase-admin": "^12.0.0"
+              "express-rate-limit": "^7.4.0",
+              "firebase-admin": "^12.0.0",
+              "helmet": "^7.1.0",
+              "morgan": "^1.10.0"
             }
           }
           ENDOFFILE
 
           cat > server/index.js << 'ENDOFFILE'
-          const express = require('express');
-          const admin = require('firebase-admin');
+          'use strict';
+          const express     = require('express');
+          const helmet      = require('helmet');
+          const compression = require('compression');
+          const cors        = require('cors');
+          const morgan      = require('morgan');
+          const rateLimit   = require('express-rate-limit');
+          const admin       = require('firebase-admin');
+          const cloudinary  = require('cloudinary').v2;
 
           const DB_URL = "https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app";
 
-          // FIREBASE_SERVICE_ACCOUNT env var: paste the full service account JSON
-          // (or base64-encoded JSON). Get it from Firebase Console →
-          // Project Settings → Service Accounts → Generate new private key.
+          // ---------- Firebase Admin ----------
           let serviceAccount;
           try {
             const raw = (process.env.FIREBASE_SERVICE_ACCOUNT || '').trim();
             if (!raw) {
-              console.error('FIREBASE_SERVICE_ACCOUNT env var missing');
+              console.error('FATAL: FIREBASE_SERVICE_ACCOUNT env var missing');
               process.exit(1);
             }
             serviceAccount = raw.startsWith('{')
               ? JSON.parse(raw)
               : JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
           } catch (e) {
-            console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT:', e.message);
+            console.error('FATAL: Failed to parse FIREBASE_SERVICE_ACCOUNT:', e.message);
             process.exit(1);
           }
-
           admin.initializeApp({
             credential: admin.credential.cert(serviceAccount),
             databaseURL: DB_URL,
           });
 
+          // ---------- Cloudinary ----------
+          const CLD_NAME   = process.env.CLOUDINARY_CLOUD_NAME;
+          const CLD_KEY    = process.env.CLOUDINARY_API_KEY;
+          const CLD_SECRET = process.env.CLOUDINARY_API_SECRET;
+          if (!CLD_NAME || !CLD_KEY || !CLD_SECRET) {
+            console.warn('WARN: Cloudinary env vars missing — /cloudinary/sign disabled');
+          } else {
+            cloudinary.config({
+              cloud_name: CLD_NAME,
+              api_key: CLD_KEY,
+              api_secret: CLD_SECRET,
+              secure: true,
+            });
+          }
+
+          // ---------- Express app ----------
           const app = express();
+          app.set('trust proxy', 1); // Render uses a proxy
+          app.disable('x-powered-by');
+          app.use(helmet());
+          app.use(compression());
+          app.use(cors());
           app.use(express.json({ limit: '1mb' }));
+          app.use(morgan('tiny'));
 
-          app.get('/', (_req, res) => res.send('CallX server running ✅'));
-          app.get('/healthz', (_req, res) => res.json({ ok: true }));
+          // Rate limits — abuse protection
+          const notifyLimiter = rateLimit({
+            windowMs: 60 * 1000, max: 60,
+            standardHeaders: true, legacyHeaders: false,
+          });
+          const signLimiter = rateLimit({
+            windowMs: 60 * 1000, max: 30,
+            standardHeaders: true, legacyHeaders: false,
+          });
 
+          app.get('/', (_req, res) => res.type('text/plain').send('CallX server running ✅'));
+          app.get('/healthz', (_req, res) => res.json({
+            ok: true,
+            uptime: process.uptime(),
+            cloudinary: !!(CLD_NAME && CLD_KEY && CLD_SECRET),
+          }));
+
+          // ---------- FCM ----------
           async function getToken(uid) {
             const snap = await admin.database().ref(`users/${uid}/fcmToken`).get();
             return snap.exists() ? snap.val() : null;
           }
-
-          // POST /notify
-          // body: { toUid, fromUid, fromName, type: 'call' | 'message', text? }
-          app.post('/notify', async (req, res) => {
+          app.post('/notify', notifyLimiter, async (req, res) => {
             try {
               const { toUid, fromUid, fromName, type, text } = req.body || {};
               if (!toUid || !type) {
@@ -2175,21 +2613,71 @@ jobs:
                   fromName: String(fromName || ''),
                   text: String(text || ''),
                 },
-                android: {
-                  priority: 'high',
-                  ttl: 60 * 1000,
-                },
+                android: { priority: 'high', ttl: 60 * 1000 },
               };
               const id = await admin.messaging().send(message);
               return res.json({ ok: true, id });
             } catch (e) {
-              console.error('notify error:', e);
+              console.error('notify error:', e.message);
+              // Stale token → clean up so we don't retry it
+              if (e.code === 'messaging/registration-token-not-registered'
+                  && req.body && req.body.toUid) {
+                try {
+                  await admin.database()
+                    .ref(`users/${req.body.toUid}/fcmToken`).remove();
+                } catch (_) {}
+              }
               return res.status(500).json({ error: e.message });
             }
           });
 
+          // ---------- Cloudinary signed-upload signing ----------
+          // POST /cloudinary/sign  body: { folder?: string }
+          // Returns: { signature, timestamp, api_key, cloud_name, folder }
+          app.post('/cloudinary/sign', signLimiter, (req, res) => {
+            try {
+              if (!CLD_NAME || !CLD_KEY || !CLD_SECRET) {
+                return res.status(503).json({ error: 'Cloudinary not configured' });
+              }
+              const timestamp = Math.round(Date.now() / 1000);
+              const folder = (req.body && typeof req.body.folder === 'string'
+                && req.body.folder.trim()) ? req.body.folder.trim() : 'callx';
+              const paramsToSign = { timestamp, folder };
+              const signature = cloudinary.utils.api_sign_request(
+                paramsToSign, CLD_SECRET);
+              return res.json({
+                signature, timestamp, folder,
+                api_key: CLD_KEY,
+                cloud_name: CLD_NAME,
+              });
+            } catch (e) {
+              console.error('sign error:', e.message);
+              return res.status(500).json({ error: e.message });
+            }
+          });
+
+          // ---------- 404 + error middleware ----------
+          app.use((req, res) => res.status(404).json({ error: 'Not found' }));
+          app.use((err, _req, res, _next) => {
+            console.error('Unhandled:', err);
+            res.status(500).json({ error: 'Internal server error' });
+          });
+
+          // ---------- Start ----------
           const PORT = process.env.PORT || 3000;
-          app.listen(PORT, () => console.log(`CallX server listening on :${PORT}`));
+          const server = app.listen(PORT,
+            () => console.log(`CallX server listening on :${PORT}`));
+
+          // Graceful shutdown
+          function shutdown(sig) {
+            console.log(`${sig} received — shutting down`);
+            server.close(() => process.exit(0));
+            setTimeout(() => process.exit(1), 10000).unref();
+          }
+          process.on('SIGTERM', () => shutdown('SIGTERM'));
+          process.on('SIGINT',  () => shutdown('SIGINT'));
+          process.on('unhandledRejection', (r) => console.error('unhandledRejection:', r));
+          process.on('uncaughtException',  (e) => console.error('uncaughtException:', e));
           ENDOFFILE
 
           cat > server/render.yaml << 'ENDOFFILE'
@@ -2201,8 +2689,17 @@ jobs:
               rootDir: server
               buildCommand: npm install
               startCommand: npm start
+              healthCheckPath: /healthz
               envVars:
+                - key: NODE_ENV
+                  value: production
                 - key: FIREBASE_SERVICE_ACCOUNT
+                  sync: false
+                - key: CLOUDINARY_CLOUD_NAME
+                  sync: false
+                - key: CLOUDINARY_API_KEY
+                  sync: false
+                - key: CLOUDINARY_API_SECRET
                   sync: false
           ENDOFFILE
 
@@ -2215,30 +2712,48 @@ jobs:
           cat > server/README.md << 'ENDOFFILE'
           # CallX Server (Render)
 
-          FCM push notification trigger server for CallX Android app.
+          Production Node.js server for CallX:
+          - **FCM push** notifications (calls + messages)
+          - **Cloudinary signed-upload** signing (storage)
 
           ## Deploy on Render
 
           1. Push this repo to GitHub.
           2. Go to https://dashboard.render.com → **New +** → **Web Service**.
-          3. Connect your GitHub repo.
+          3. Connect your repo.
           4. Settings:
              - **Root Directory**: `server`
              - **Environment**: Node
              - **Build Command**: `npm install`
              - **Start Command**: `npm start`
-          5. Add **Environment Variable**:
-             - Key: `FIREBASE_SERVICE_ACCOUNT`
-             - Value: paste the full Firebase service account JSON
-               (Firebase Console → Project Settings → Service Accounts → Generate new private key).
-          6. Deploy. Note the URL (e.g. `https://callx-server.onrender.com`).
-          7. Open `app/src/main/java/com/callx/app/utils/Constants.java` and update
-             `SERVER_URL` to your Render URL. Rebuild APK.
+             - **Health Check Path**: `/healthz`
+          5. Add **Environment Variables** (Settings → Environment):
+
+             | Key | Value |
+             | --- | --- |
+             | `FIREBASE_SERVICE_ACCOUNT` | full Firebase service account JSON |
+             | `CLOUDINARY_CLOUD_NAME` | `dvqqgqdls` |
+             | `CLOUDINARY_API_KEY` | your Cloudinary API key |
+             | `CLOUDINARY_API_SECRET` | your Cloudinary API secret |
+             | `NODE_ENV` | `production` |
+
+          6. Deploy. URL: `https://callx-server.onrender.com`.
 
           ## Endpoints
 
-          - `GET  /healthz` — health check
-          - `POST /notify`  — body: `{ toUid, fromUid, fromName, type, text? }`
+          - `GET  /`               — liveness ping
+          - `GET  /healthz`        — health JSON `{ ok, uptime, cloudinary }`
+          - `POST /notify`         — FCM push. body: `{ toUid, fromUid, fromName, type, text? }`
+          - `POST /cloudinary/sign` — signed upload params. body: `{ folder? }` →
+            `{ signature, timestamp, api_key, cloud_name, folder }`
+
+          ## Production hardening
+
+          - `helmet` security headers, `compression`, `cors`
+          - `morgan` request logging, `trust proxy` for Render
+          - Rate limits: 60/min for `/notify`, 30/min for `/cloudinary/sign`
+          - Stale FCM tokens auto-pruned
+          - Graceful shutdown on SIGTERM/SIGINT
           ENDOFFILE
 
           echo "✅ All files created successfully!"
@@ -2256,7 +2771,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --cached --quiet || git commit -m "🚀 CallX — FCM push notifications + Render server"
+          git diff --cached --quiet || git commit -m "🚀 CallX v1.1 — Cloudinary signed storage + production hardening"
           git push
 
       - name: Build Debug APK
