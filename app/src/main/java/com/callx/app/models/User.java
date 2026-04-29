@@ -1,9 +1,13 @@
 package com.callx.app.models;
 public class User {
-    public String uid, name, emoji, callxId, email;
+    public String uid;
+    public String email;
+    public String name;
+    public String emoji;
+    public String callxId;
+    public String about;
+    public String photoUrl;
+    public String fcmToken;
+    public Long lastSeen;
     public User() {}
-    public User(String uid, String name, String emoji, String callxId, String email) {
-        this.uid = uid; this.name = name; this.emoji = emoji;
-        this.callxId = callxId; this.email = email;
-    }
 }

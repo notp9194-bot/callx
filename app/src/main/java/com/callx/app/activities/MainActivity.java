@@ -1,11 +1,15 @@
 package com.callx.app.activities;
 import android.Manifest;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.viewpager2.widget.ViewPager2;
@@ -13,13 +17,12 @@ import com.callx.app.R;
 import com.callx.app.adapters.ViewPagerAdapter;
 import com.callx.app.databinding.ActivityMainBinding;
 import com.callx.app.utils.Constants;
-import com.google.android.material.tabs.TabLayoutMediator;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.*;
 import com.google.firebase.messaging.FirebaseMessaging;
 public class MainActivity extends AppCompatActivity {
     private ActivityMainBinding binding;
-    private final String[] tabs = {"Chats", "Updates", "Calls"};
+    private String myCallxId = "";
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -29,7 +32,6 @@ public class MainActivity extends AppCompatActivity {
             startActivity(new Intent(this, AuthActivity.class));
             finish(); return;
         }
-        // Android 13+ notification permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                     != PackageManager.PERMISSION_GRANTED) {
@@ -39,22 +41,68 @@ public class MainActivity extends AppCompatActivity {
         }
         setSupportActionBar(binding.toolbar);
         binding.viewPager.setAdapter(new ViewPagerAdapter(this));
-        new TabLayoutMediator(binding.tabLayout, binding.viewPager,
-            (tab, pos) -> tab.setText(tabs[pos])).attach();
-        // FAB — Search screen kholo
-        binding.fabNewChat.setOnClickListener(v ->
-            startActivity(new Intent(this, SearchActivity.class)));
-        // Apna CallX ID dikhao
+        binding.viewPager.setUserInputEnabled(true);
+        binding.viewPager.registerOnPageChangeCallback(
+            new ViewPager2.OnPageChangeCallback() {
+                @Override public void onPageSelected(int position) {
+                    switch (position) {
+                        case 0: binding.bottomNav.setSelectedItemId(R.id.nav_chats);  break;
+                        case 1: binding.bottomNav.setSelectedItemId(R.id.nav_status); break;
+                        case 2: binding.bottomNav.setSelectedItemId(R.id.nav_groups); break;
+                        case 3: binding.bottomNav.setSelectedItemId(R.id.nav_calls);  break;
+                    }
+                    updateFab(position);
+                }
+            });
+        binding.bottomNav.setOnItemSelectedListener(item -> {
+            int id = item.getItemId();
+            if (id == R.id.nav_chats)  binding.viewPager.setCurrentItem(0);
+            else if (id == R.id.nav_status) binding.viewPager.setCurrentItem(1);
+            else if (id == R.id.nav_groups) binding.viewPager.setCurrentItem(2);
+            else if (id == R.id.nav_calls)  binding.viewPager.setCurrentItem(3);
+            return true;
+        });
+        binding.fabAction.setOnClickListener(v -> {
+            int pos = binding.viewPager.getCurrentItem();
+            if (pos == 0) startActivity(new Intent(this, SearchActivity.class));
+            else if (pos == 1) startActivity(new Intent(this, NewStatusActivity.class));
+            else if (pos == 2) startActivity(new Intent(this, NewGroupActivity.class));
+            else startActivity(new Intent(this, SearchActivity.class));
+        });
+        binding.btnCopyId.setOnClickListener(v -> {
+            if (myCallxId.isEmpty()) return;
+            ClipboardManager cm = (ClipboardManager)
+                getSystemService(Context.CLIPBOARD_SERVICE);
+            cm.setPrimaryClip(ClipData.newPlainText("CallX ID", myCallxId));
+            Toast.makeText(this, "ID copy ho gayi", Toast.LENGTH_SHORT).show();
+        });
+        loadMyId();
+        refreshFcmToken();
+    }
+    private void updateFab(int position) {
+        switch (position) {
+            case 0: binding.fabAction.setImageResource(R.drawable.ic_status_add); break;
+            case 1: binding.fabAction.setImageResource(R.drawable.ic_camera);     break;
+            case 2: binding.fabAction.setImageResource(R.drawable.ic_group);      break;
+            case 3: binding.fabAction.setImageResource(R.drawable.ic_phone);      break;
+        }
+    }
+    private void loadMyId() {
         String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
         FirebaseDatabase.getInstance(Constants.DB_URL).getReference("users").child(uid)
             .addListenerForSingleValueEvent(new ValueEventListener() {
                 public void onDataChange(DataSnapshot snap) {
                     String id = snap.child("callxId").getValue(String.class);
-                    if (id != null) binding.tvMyId.setText("Mera CallX ID: " + id);
+                    if (id != null) {
+                        myCallxId = id;
+                        binding.tvMyId.setText("Mera CallX ID: " + id);
+                    }
                 }
                 public void onCancelled(DatabaseError e) {}
             });
-        // Refresh FCM token (app launch pe har baar)
+    }
+    private void refreshFcmToken() {
+        String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
         FirebaseMessaging.getInstance().getToken()
             .addOnSuccessListener(token -> {
                 if (token == null) return;
@@ -63,17 +111,22 @@ public class MainActivity extends AppCompatActivity {
                     .child("fcmToken").setValue(token);
             });
     }
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
+    @Override public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.main_menu, menu);
         return true;
     }
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == R.id.action_logout) {
+    @Override public boolean onOptionsItemSelected(MenuItem item) {
+        int id = item.getItemId();
+        if (id == R.id.action_search) {
+            startActivity(new Intent(this, SearchActivity.class)); return true;
+        }
+        if (id == R.id.action_profile) {
+            startActivity(new Intent(this, ProfileActivity.class)); return true;
+        }
+        if (id == R.id.action_logout) {
             FirebaseAuth.getInstance().signOut();
             startActivity(new Intent(this, AuthActivity.class));
-            finish();
+            finish(); return true;
         }
         return super.onOptionsItemSelected(item);
     }

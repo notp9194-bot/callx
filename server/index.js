@@ -1,162 +1,189 @@
-'use strict';
-const express     = require('express');
-const helmet      = require('helmet');
-const compression = require('compression');
-const cors        = require('cors');
-const morgan      = require('morgan');
-const rateLimit   = require('express-rate-limit');
-const admin       = require('firebase-admin');
-const cloudinary  = require('cloudinary').v2;
+const express = require("express");
+const cors    = require("cors");
+const morgan  = require("morgan");
+const crypto  = require("crypto");
+const admin   = require("firebase-admin");
 
-const DB_URL = "https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app";
-
-// ---------- Firebase Admin ----------
-let serviceAccount;
-try {
-  const raw = (process.env.FIREBASE_SERVICE_ACCOUNT || '').trim();
-  if (!raw) {
-    console.error('FATAL: FIREBASE_SERVICE_ACCOUNT env var missing');
-    process.exit(1);
-  }
-  serviceAccount = raw.startsWith('{')
-    ? JSON.parse(raw)
-    : JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
-} catch (e) {
-  console.error('FATAL: Failed to parse FIREBASE_SERVICE_ACCOUNT:', e.message);
-  process.exit(1);
-}
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: DB_URL,
-});
-
-// ---------- Cloudinary ----------
-const CLD_NAME   = process.env.CLOUDINARY_CLOUD_NAME;
-const CLD_KEY    = process.env.CLOUDINARY_API_KEY;
-const CLD_SECRET = process.env.CLOUDINARY_API_SECRET;
-if (!CLD_NAME || !CLD_KEY || !CLD_SECRET) {
-  console.warn('WARN: Cloudinary env vars missing — /cloudinary/sign disabled');
-} else {
-  cloudinary.config({
-    cloud_name: CLD_NAME,
-    api_key: CLD_KEY,
-    api_secret: CLD_SECRET,
-    secure: true,
-  });
-}
-
-// ---------- Express app ----------
 const app = express();
-app.set('trust proxy', 1); // Render uses a proxy
-app.disable('x-powered-by');
-app.use(helmet());
-app.use(compression());
 app.use(cors());
-app.use(express.json({ limit: '1mb' }));
-app.use(morgan('tiny'));
+app.use(express.json({ limit: "2mb" }));
+app.use(morgan("tiny"));
 
-// Rate limits — abuse protection
-const notifyLimiter = rateLimit({
-  windowMs: 60 * 1000, max: 60,
-  standardHeaders: true, legacyHeaders: false,
-});
-const signLimiter = rateLimit({
-  windowMs: 60 * 1000, max: 30,
-  standardHeaders: true, legacyHeaders: false,
-});
-
-app.get('/', (_req, res) => res.type('text/plain').send('CallX server running ✅'));
-app.get('/healthz', (_req, res) => res.json({
-  ok: true,
-  uptime: process.uptime(),
-  cloudinary: !!(CLD_NAME && CLD_KEY && CLD_SECRET),
-}));
-
-// ---------- FCM ----------
-async function getToken(uid) {
-  const snap = await admin.database().ref(`users/${uid}/fcmToken`).get();
-  return snap.exists() ? snap.val() : null;
-}
-app.post('/notify', notifyLimiter, async (req, res) => {
-  try {
-    const { toUid, fromUid, fromName, type, text } = req.body || {};
-    if (!toUid || !type) {
-      return res.status(400).json({ error: 'toUid & type required' });
-    }
-    const token = await getToken(toUid);
-    if (!token) {
-      return res.status(404).json({ error: 'Receiver token not found' });
-    }
-    const message = {
-      token,
-      data: {
-        type: String(type),
-        fromUid: String(fromUid || ''),
-        fromName: String(fromName || ''),
-        text: String(text || ''),
-      },
-      android: { priority: 'high', ttl: 60 * 1000 },
-    };
-    const id = await admin.messaging().send(message);
-    return res.json({ ok: true, id });
-  } catch (e) {
-    console.error('notify error:', e.message);
-    // Stale token → clean up so we don't retry it
-    if (e.code === 'messaging/registration-token-not-registered'
-        && req.body && req.body.toUid) {
-      try {
-        await admin.database()
-          .ref(`users/${req.body.toUid}/fcmToken`).remove();
-      } catch (_) {}
-    }
-    return res.status(500).json({ error: e.message });
-  }
-});
-
-// ---------- Cloudinary signed-upload signing ----------
-// POST /cloudinary/sign  body: { folder?: string }
-// Returns: { signature, timestamp, api_key, cloud_name, folder }
-app.post('/cloudinary/sign', signLimiter, (req, res) => {
-  try {
-    if (!CLD_NAME || !CLD_KEY || !CLD_SECRET) {
-      return res.status(503).json({ error: 'Cloudinary not configured' });
-    }
-    const timestamp = Math.round(Date.now() / 1000);
-    const folder = (req.body && typeof req.body.folder === 'string'
-      && req.body.folder.trim()) ? req.body.folder.trim() : 'callx';
-    const paramsToSign = { timestamp, folder };
-    const signature = cloudinary.utils.api_sign_request(
-      paramsToSign, CLD_SECRET);
-    return res.json({
-      signature, timestamp, folder,
-      api_key: CLD_KEY,
-      cloud_name: CLD_NAME,
+// ---- Firebase Admin init ----
+let firebaseReady = false;
+try {
+  const sa = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (sa) {
+    const creds = JSON.parse(sa);
+    admin.initializeApp({
+      credential: admin.credential.cert(creds),
+      databaseURL: process.env.DB_URL ||
+        "https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app"
     });
+    firebaseReady = true;
+    console.log("[OK] Firebase Admin initialized");
+  } else {
+    console.warn("[WARN] FIREBASE_SERVICE_ACCOUNT missing");
+  }
+} catch (e) {
+  console.error("[ERR] Firebase init failed:", e.message);
+}
+
+const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "dvqqgqdls";
+const CLOUD_KEY  = process.env.CLOUDINARY_API_KEY;
+const CLOUD_SEC  = process.env.CLOUDINARY_API_SECRET;
+const cloudReady = !!(CLOUD_KEY && CLOUD_SEC);
+if (!cloudReady) console.warn("[WARN] CLOUDINARY_API_KEY/SECRET missing");
+
+app.get("/", (req, res) => res.json({
+  ok: true,
+  service: "callx-server v2",
+  firebaseReady,
+  cloudReady,
+  cloudName: CLOUD_NAME
+}));
+app.get("/healthz", (req, res) =>
+  res.json({ ok: true, firebaseReady, cloudReady }));
+
+// ---- Cloudinary signed upload ----
+app.post("/cloudinary/sign", (req, res) => {
+  if (!cloudReady) {
+    return res.status(503).json({
+      error: "Cloudinary not configured",
+      hint: "Render dashboard pe CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET set karo"
+    });
+  }
+  const folder       = (req.body && req.body.folder) || "callx";
+  const resourceType = (req.body && req.body.resource_type) || "auto";
+  const timestamp    = Math.floor(Date.now() / 1000).toString();
+  // Cloudinary signature: alphabetical params (folder + timestamp) + secret
+  const toSign = `folder=${folder}&timestamp=${timestamp}`;
+  const signature = crypto.createHash("sha1")
+    .update(toSign + CLOUD_SEC).digest("hex");
+  res.json({
+    signature, timestamp,
+    api_key: CLOUD_KEY,
+    cloud_name: CLOUD_NAME,
+    folder, resource_type: resourceType
+  });
+});
+
+// ---- Notify single user ----
+app.post("/notify", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+  const { toUid, fromUid, fromName, type, text } = req.body || {};
+  if (!toUid) return res.status(400).json({ error: "toUid required" });
+  try {
+    const snap = await admin.database().ref("users/" + toUid).once("value");
+    const user = snap.val() || {};
+    if (!user.fcmToken)
+      return res.status(404).json({ error: "no token" });
+    const message = {
+      token: user.fcmToken,
+      data: {
+        type:     String(type || "message"),
+        fromUid:  String(fromUid || ""),
+        fromName: String(fromName || ""),
+        text:     String(text || "")
+      },
+      android: { priority: "high" }
+    };
+    const r = await admin.messaging().send(message);
+    res.json({ ok: true, id: r });
   } catch (e) {
-    console.error('sign error:', e.message);
-    return res.status(500).json({ error: e.message });
+    console.error("notify err:", e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
-// ---------- 404 + error middleware ----------
-app.use((req, res) => res.status(404).json({ error: 'Not found' }));
-app.use((err, _req, res, _next) => {
-  console.error('Unhandled:', err);
-  res.status(500).json({ error: 'Internal server error' });
+// ---- Notify group (fanout to all members except sender) ----
+app.post("/notify/group", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+  const { groupId, fromUid, fromName, type, text } = req.body || {};
+  if (!groupId) return res.status(400).json({ error: "groupId required" });
+  try {
+    const gSnap = await admin.database()
+      .ref("groups/" + groupId).once("value");
+    const g = gSnap.val();
+    if (!g) return res.status(404).json({ error: "group not found" });
+    const memberUids = Object.keys(g.members || {})
+      .filter(uid => uid !== fromUid);
+    const tokens = [];
+    for (const uid of memberUids) {
+      const us = await admin.database().ref("users/" + uid).once("value");
+      const t = us.val() && us.val().fcmToken;
+      if (t) tokens.push(t);
+    }
+    if (!tokens.length) return res.json({ ok: true, sent: 0 });
+    const responses = [];
+    for (const tk of tokens) {
+      try {
+        const r = await admin.messaging().send({
+          token: tk,
+          data: {
+            type:     String(type || "group_message"),
+            groupId:  String(groupId),
+            fromUid:  String(fromUid || ""),
+            fromName: String((g.name || "Group") + " • " + (fromName || "")),
+            text:     String(text || "")
+          },
+          android: { priority: "high" }
+        });
+        responses.push(r);
+      } catch (e) {
+        console.warn("group send fail:", e.message);
+      }
+    }
+    res.json({ ok: true, sent: responses.length });
+  } catch (e) {
+    console.error("group notify err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
-// ---------- Start ----------
-const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT,
-  () => console.log(`CallX server listening on :${PORT}`));
+// ---- Notify status (fanout to all contacts of poster) ----
+app.post("/notify/status", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+  const { fromUid, fromName } = req.body || {};
+  if (!fromUid) return res.status(400).json({ error: "fromUid required" });
+  try {
+    const cSnap = await admin.database()
+      .ref("contacts/" + fromUid).once("value");
+    const contacts = cSnap.val() || {};
+    const uids = Object.keys(contacts);
+    const tokens = [];
+    for (const uid of uids) {
+      const us = await admin.database().ref("users/" + uid).once("value");
+      const t = us.val() && us.val().fcmToken;
+      if (t) tokens.push(t);
+    }
+    if (!tokens.length) return res.json({ ok: true, sent: 0 });
+    let sent = 0;
+    for (const tk of tokens) {
+      try {
+        await admin.messaging().send({
+          token: tk,
+          data: {
+            type:     "status",
+            fromUid:  String(fromUid),
+            fromName: String(fromName || "Friend"),
+            text:     "Naya status post kiya"
+          },
+          android: { priority: "high" }
+        });
+        sent++;
+      } catch (e) {
+        console.warn("status send fail:", e.message);
+      }
+    }
+    res.json({ ok: true, sent });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
-// Graceful shutdown
-function shutdown(sig) {
-  console.log(`${sig} received — shutting down`);
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(1), 10000).unref();
-}
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT',  () => shutdown('SIGINT'));
-process.on('unhandledRejection', (r) => console.error('unhandledRejection:', r));
-process.on('uncaughtException',  (e) => console.error('uncaughtException:', e));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("callx-server v2 on :" + PORT));

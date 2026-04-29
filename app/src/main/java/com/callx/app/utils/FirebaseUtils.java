@@ -4,23 +4,42 @@ import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import java.util.Arrays;
 public class FirebaseUtils {
+    public static FirebaseDatabase db() {
+        return FirebaseDatabase.getInstance(Constants.DB_URL);
+    }
     public static String getCurrentUid() {
         return FirebaseAuth.getInstance().getCurrentUser().getUid();
     }
+    public static String getCurrentName() {
+        String n = FirebaseAuth.getInstance().getCurrentUser().getDisplayName();
+        return (n == null || n.isEmpty()) ? "CallX User" : n;
+    }
     public static DatabaseReference getUserRef(String uid) {
-        return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("users").child(uid);
+        return db().getReference("users").child(uid);
     }
     public static DatabaseReference getMessagesRef(String chatId) {
-        return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("messages").child(chatId);
+        return db().getReference("messages").child(chatId);
     }
     public static DatabaseReference getContactsRef(String uid) {
-        return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("contacts").child(uid);
+        return db().getReference("contacts").child(uid);
     }
     public static DatabaseReference getRequestsRef(String uid) {
-        return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("requests").child(uid);
+        return db().getReference("requests").child(uid);
     }
     public static DatabaseReference getCallsRef(String uid) {
-        return FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("calls").child(uid);
+        return db().getReference("calls").child(uid);
+    }
+    public static DatabaseReference getGroupsRef() {
+        return db().getReference("groups");
+    }
+    public static DatabaseReference getGroupMessagesRef(String groupId) {
+        return db().getReference("groupMessages").child(groupId);
+    }
+    public static DatabaseReference getUserGroupsRef(String uid) {
+        return db().getReference("userGroups").child(uid);
+    }
+    public static DatabaseReference getStatusRef() {
+        return db().getReference("status");
     }
     public static String getChatId(String uid1, String uid2) {
         String[] ids = {uid1, uid2};

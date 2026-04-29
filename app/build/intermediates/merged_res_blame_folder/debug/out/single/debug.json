@@ -1,0 +1,290 @@
+[
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_circle_red.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/circle_red.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_play.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_play.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_phone_off.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_phone_off.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_circle_primary.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/circle_primary.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_status_add.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_status_add.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_item_request.xml.flat",
+        "source": "com.callx.app-main-52:/layout/item_request.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_group.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_group.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_circle_accept.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/circle_accept.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_mic.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_mic.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_activity_main.xml.flat",
+        "source": "com.callx.app-main-52:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_activity_new_status.xml.flat",
+        "source": "com.callx.app-main-52:/layout/activity_new_status.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_gallery.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_gallery.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_send.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_send.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_fragment_calls.xml.flat",
+        "source": "com.callx.app-main-52:/layout/fragment_calls.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.callx.app-main-52:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_audio.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_audio.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_item_call_history.xml.flat",
+        "source": "com.callx.app-main-52:/layout/item_call_history.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_activity_media_viewer.xml.flat",
+        "source": "com.callx.app-main-52:/layout/activity_media_viewer.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_bottom_sheet_attach.xml.flat",
+        "source": "com.callx.app-main-52:/layout/bottom_sheet_attach.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_file_card_bg.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/file_card_bg.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_bubble_received.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/bubble_received.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_item_message_received.xml.flat",
+        "source": "com.callx.app-main-52:/layout/item_message_received.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_fragment_updates.xml.flat",
+        "source": "com.callx.app-main-52:/layout/fragment_updates.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_pdf.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_pdf.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_fragment_status.xml.flat",
+        "source": "com.callx.app-main-52:/layout/fragment_status.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_person.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_person.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/xml_data_extraction_rules.xml.flat",
+        "source": "com.callx.app-main-52:/xml/data_extraction_rules.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_fragment_groups.xml.flat",
+        "source": "com.callx.app-main-52:/layout/fragment_groups.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_activity_chat.xml.flat",
+        "source": "com.callx.app-main-52:/layout/activity_chat.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_video.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_video.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_fragment_chats.xml.flat",
+        "source": "com.callx.app-main-52:/layout/fragment_chats.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/xml_file_paths.xml.flat",
+        "source": "com.callx.app-main-52:/xml/file_paths.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_video_call.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_video_call.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_status_notification.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_status_notification.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_back.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_back.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_item_status.xml.flat",
+        "source": "com.callx.app-main-52:/layout/item_status.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/menu_chat_menu.xml.flat",
+        "source": "com.callx.app-main-52:/menu/chat_menu.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_item_member_select.xml.flat",
+        "source": "com.callx.app-main-52:/layout/item_member_select.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_search.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_search.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_circle_reject.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/circle_reject.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_activity_status_viewer.xml.flat",
+        "source": "com.callx.app-main-52:/layout/activity_status_viewer.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_activity_call.xml.flat",
+        "source": "com.callx.app-main-52:/layout/activity_call.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_card_rounded.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/card_rounded.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_call_notification.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_call_notification.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_file.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_file.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_circle_status_seen.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/circle_status_seen.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/menu_main_menu.xml.flat",
+        "source": "com.callx.app-main-52:/menu/main_menu.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_item_group.xml.flat",
+        "source": "com.callx.app-main-52:/layout/item_group.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_camera.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_camera.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_activity_incoming_call.xml.flat",
+        "source": "com.callx.app-main-52:/layout/activity_incoming_call.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_item_contact.xml.flat",
+        "source": "com.callx.app-main-52:/layout/item_contact.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_launcher_fg.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_launcher_fg.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_item_chat.xml.flat",
+        "source": "com.callx.app-main-52:/layout/item_chat.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_activity_search.xml.flat",
+        "source": "com.callx.app-main-52:/layout/activity_search.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.callx.app-main-52:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/xml_network_security_config.xml.flat",
+        "source": "com.callx.app-main-52:/xml/network_security_config.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_phone.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_phone.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_circle_status_unseen.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/circle_status_unseen.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_bubble_sent.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/bubble_sent.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_gradient_brand.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/gradient_brand.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_attach.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_attach.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_logout.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_logout.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_activity_profile.xml.flat",
+        "source": "com.callx.app-main-52:/layout/activity_profile.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_rounded_input_bg.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/rounded_input_bg.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_message_notification.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_message_notification.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_activity_new_group.xml.flat",
+        "source": "com.callx.app-main-52:/layout/activity_new_group.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_circle_avatar_bg.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/circle_avatar_bg.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_pause.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_pause.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/menu_bottom_nav_menu.xml.flat",
+        "source": "com.callx.app-main-52:/menu/bottom_nav_menu.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_activity_auth.xml.flat",
+        "source": "com.callx.app-main-52:/layout/activity_auth.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_circle_green.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/circle_green.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_item_message_sent.xml.flat",
+        "source": "com.callx.app-main-52:/layout/item_message_sent.xml"
+    }
+]

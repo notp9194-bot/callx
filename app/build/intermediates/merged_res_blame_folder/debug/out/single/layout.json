@@ -1,0 +1,106 @@
+[
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_call.xml",
+        "source": "com.callx.app-main-52:/layout/activity_call.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/item_call_history.xml",
+        "source": "com.callx.app-main-52:/layout/item_call_history.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_profile.xml",
+        "source": "com.callx.app-main-52:/layout/activity_profile.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_new_group.xml",
+        "source": "com.callx.app-main-52:/layout/activity_new_group.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_auth.xml",
+        "source": "com.callx.app-main-52:/layout/activity_auth.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/item_member_select.xml",
+        "source": "com.callx.app-main-52:/layout/item_member_select.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/fragment_updates.xml",
+        "source": "com.callx.app-main-52:/layout/fragment_updates.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/fragment_calls.xml",
+        "source": "com.callx.app-main-52:/layout/fragment_calls.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/item_chat.xml",
+        "source": "com.callx.app-main-52:/layout/item_chat.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_status_viewer.xml",
+        "source": "com.callx.app-main-52:/layout/activity_status_viewer.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/item_request.xml",
+        "source": "com.callx.app-main-52:/layout/item_request.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/item_message_received.xml",
+        "source": "com.callx.app-main-52:/layout/item_message_received.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/fragment_status.xml",
+        "source": "com.callx.app-main-52:/layout/fragment_status.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_new_status.xml",
+        "source": "com.callx.app-main-52:/layout/activity_new_status.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_main.xml",
+        "source": "com.callx.app-main-52:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/fragment_chats.xml",
+        "source": "com.callx.app-main-52:/layout/fragment_chats.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/bottom_sheet_attach.xml",
+        "source": "com.callx.app-main-52:/layout/bottom_sheet_attach.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_search.xml",
+        "source": "com.callx.app-main-52:/layout/activity_search.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/item_contact.xml",
+        "source": "com.callx.app-main-52:/layout/item_contact.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_incoming_call.xml",
+        "source": "com.callx.app-main-52:/layout/activity_incoming_call.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/item_message_sent.xml",
+        "source": "com.callx.app-main-52:/layout/item_message_sent.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/item_group.xml",
+        "source": "com.callx.app-main-52:/layout/item_group.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/fragment_groups.xml",
+        "source": "com.callx.app-main-52:/layout/fragment_groups.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_media_viewer.xml",
+        "source": "com.callx.app-main-52:/layout/activity_media_viewer.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_chat.xml",
+        "source": "com.callx.app-main-52:/layout/activity_chat.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/item_status.xml",
+        "source": "com.callx.app-main-52:/layout/item_status.xml"
+    }
+]

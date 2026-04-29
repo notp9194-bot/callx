@@ -1,44 +1,21 @@
-# CallX Server (Render)
+# CallX Server v2
 
-Production Node.js server for CallX:
-- **FCM push** notifications (calls + messages)
-- **Cloudinary signed-upload** signing (storage)
-
-## Deploy on Render
-
-1. Push this repo to GitHub.
-2. Go to https://dashboard.render.com → **New +** → **Web Service**.
-3. Connect your repo.
-4. Settings:
-   - **Root Directory**: `server`
-   - **Environment**: Node
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-   - **Health Check Path**: `/healthz`
-5. Add **Environment Variables** (Settings → Environment):
-
-   | Key | Value |
-   | --- | --- |
-   | `FIREBASE_SERVICE_ACCOUNT` | full Firebase service account JSON |
-   | `CLOUDINARY_CLOUD_NAME` | `dvqqgqdls` |
-   | `CLOUDINARY_API_KEY` | your Cloudinary API key |
-   | `CLOUDINARY_API_SECRET` | your Cloudinary API secret |
-   | `NODE_ENV` | `production` |
-
-6. Deploy. URL: `https://callx-server.onrender.com`.
+Production-grade Node.js backend for CallX Android app.
 
 ## Endpoints
+- `GET /healthz` — health check
+- `POST /cloudinary/sign` — signed direct uploads (resource_type aware)
+- `POST /notify` — push to single user (calls / messages)
+- `POST /notify/group` — fanout push to group members
+- `POST /notify/status` — fanout push to all contacts when posting status
 
-- `GET  /`               — liveness ping
-- `GET  /healthz`        — health JSON `{ ok, uptime, cloudinary }`
-- `POST /notify`         — FCM push. body: `{ toUid, fromUid, fromName, type, text? }`
-- `POST /cloudinary/sign` — signed upload params. body: `{ folder? }` →
-  `{ signature, timestamp, api_key, cloud_name, folder }`
+## Render env vars (Free plan)
+- `FIREBASE_SERVICE_ACCOUNT` — full JSON of Firebase admin service account (one line)
+- `CLOUDINARY_CLOUD_NAME` = `dvqqgqdls`
+- `CLOUDINARY_API_KEY` — from Cloudinary console
+- `CLOUDINARY_API_SECRET` — from Cloudinary console
+- `DB_URL` = `https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app`
 
-## Production hardening
-
-- `helmet` security headers, `compression`, `cors`
-- `morgan` request logging, `trust proxy` for Render
-- Rate limits: 60/min for `/notify`, 30/min for `/cloudinary/sign`
-- Stale FCM tokens auto-pruned
-- Graceful shutdown on SIGTERM/SIGINT
+## 503 image upload fix
+Yeh server ab `resource_type` (image / video / raw) ko sahi handle karta hai
+aur Cloudinary missing config par clear error deta hai.

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="firebase_database_url" translatable="false">https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app</string>
+    <string name="gcm_defaultSenderId" translatable="false">286173223634</string>
+    <string name="google_api_key" translatable="false">AIzaSyAl-UmdtYFQo5qX6QyiZnTVmC6AS2bwqR4</string>
+    <string name="google_app_id" translatable="false">1:286173223634:android:77c66dd61ac22411b16b0b</string>
+    <string name="google_crash_reporting_api_key" translatable="false">AIzaSyAl-UmdtYFQo5qX6QyiZnTVmC6AS2bwqR4</string>
+    <string name="google_storage_bucket" translatable="false">sathix-97a76.firebasestorage.app</string>
+    <string name="project_id" translatable="false">sathix-97a76</string>
+</resources>

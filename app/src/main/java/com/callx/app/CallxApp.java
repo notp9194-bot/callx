@@ -13,7 +13,6 @@ public class CallxApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
-        // Offline persistence — must be called once before any DB usage
         try {
             FirebaseDatabase.getInstance(Constants.DB_URL)
                 .setPersistenceEnabled(true);
@@ -27,6 +26,7 @@ public class CallxApp extends Application {
         NotificationManager nm =
             (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (nm == null) return;
+
         NotificationChannel calls = new NotificationChannel(
             Constants.CHANNEL_CALLS, "Incoming Calls",
             NotificationManager.IMPORTANCE_HIGH);
@@ -39,9 +39,22 @@ public class CallxApp extends Application {
         calls.enableVibration(true);
         calls.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
         nm.createNotificationChannel(calls);
+
         NotificationChannel msgs = new NotificationChannel(
             Constants.CHANNEL_MESSAGES, "Messages",
             NotificationManager.IMPORTANCE_HIGH);
+        msgs.enableVibration(true);
         nm.createNotificationChannel(msgs);
+
+        NotificationChannel groups = new NotificationChannel(
+            Constants.CHANNEL_GROUPS, "Group Messages",
+            NotificationManager.IMPORTANCE_HIGH);
+        groups.enableVibration(true);
+        nm.createNotificationChannel(groups);
+
+        NotificationChannel status = new NotificationChannel(
+            Constants.CHANNEL_STATUS, "Status / Story",
+            NotificationManager.IMPORTANCE_DEFAULT);
+        nm.createNotificationChannel(status);
     }
 }
