@@ -1,9 +1,9 @@
 -- Merging decision tree log ---
 manifest
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:2:1-101:12
-INJECTED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:2:1-101:12
-INJECTED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:2:1-101:12
-INJECTED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:2:1-101:12
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:2:1-102:12
+INJECTED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:2:1-102:12
+INJECTED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:2:1-102:12
+INJECTED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:2:1-102:12
 MERGED from [androidx.databinding:viewbinding:8.2.2] /home/runner/.gradle/caches/transforms-3/e0883e5621bb8cf3f3e1e6ad57e5cdb0/transformed/jetified-viewbinding-8.2.2/AndroidManifest.xml:2:1-7:12
 MERGED from [com.google.android.material:material:1.11.0] /home/runner/.gradle/caches/transforms-3/d6d5a7be40bcfd9006340136dd683bfd/transformed/material-1.11.0/AndroidManifest.xml:17:1-24:12
 MERGED from [androidx.constraintlayout:constraintlayout:2.1.4] /home/runner/.gradle/caches/transforms-3/e271191f5aa215759608de2a3077613a/transformed/constraintlayout-2.1.4/AndroidManifest.xml:2:1-11:12
@@ -238,8 +238,8 @@ ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:22:5-7
 	android:name
 		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:22:22-72
 application
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:24:5-100:19
-INJECTED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:24:5-100:19
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:24:5-101:19
+INJECTED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:24:5-101:19
 MERGED from [com.google.android.material:material:1.11.0] /home/runner/.gradle/caches/transforms-3/d6d5a7be40bcfd9006340136dd683bfd/transformed/material-1.11.0/AndroidManifest.xml:22:5-20
 MERGED from [com.google.android.material:material:1.11.0] /home/runner/.gradle/caches/transforms-3/d6d5a7be40bcfd9006340136dd683bfd/transformed/material-1.11.0/AndroidManifest.xml:22:5-20
 MERGED from [androidx.constraintlayout:constraintlayout:2.1.4] /home/runner/.gradle/caches/transforms-3/e271191f5aa215759608de2a3077613a/transformed/constraintlayout-2.1.4/AndroidManifest.xml:9:5-20
@@ -380,110 +380,116 @@ ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:51:9-5
 		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:51:63-87
 	android:name
 		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:51:19-60
-activity#com.callx.app.activities.ProfileActivity
+activity#com.callx.app.activities.RequestsActivity
 ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:53:9-89
 	android:exported
 		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:53:63-87
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:53:19-61
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:53:19-62
+activity#com.callx.app.activities.ProfileActivity
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:54:9-89
+	android:exported
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:54:63-87
+	android:name
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:54:19-61
 activity#com.callx.app.activities.MediaViewerActivity
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:54:9-56:60
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:55:9-57:60
 	android:exported
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:55:13-37
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:56:13-37
 	android:theme
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:56:13-58
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:57:13-58
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:54:19-65
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:55:19-65
 activity#com.callx.app.activities.StatusViewerActivity
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:57:9-59:60
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:58:9-60:60
 	android:exported
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:58:13-37
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:59:13-37
 	android:theme
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:59:13-58
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:60:13-58
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:57:19-66
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:58:19-66
 activity#com.callx.app.activities.NewStatusActivity
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:60:9-61:39
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:61:9-62:39
 	android:exported
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:61:13-37
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:62:13-37
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:60:19-63
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:61:19-63
 activity#com.callx.app.activities.CallActivity
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:62:9-65:42
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:63:9-66:42
 	android:screenOrientation
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:63:13-49
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:64:13-49
 	android:turnScreenOn
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:65:13-40
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:66:13-40
 	android:showWhenLocked
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:64:13-42
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:65:13-42
 	android:exported
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:62:59-83
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:63:59-83
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:62:19-58
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:63:19-58
 activity#com.callx.app.activities.IncomingCallActivity
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:66:9-72:42
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:67:9-73:42
 	android:screenOrientation
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:69:13-49
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:70:13-49
 	android:turnScreenOn
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:72:13-40
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:73:13-40
 	android:excludeFromRecents
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:70:13-46
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:71:13-46
 	android:showWhenLocked
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:71:13-42
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:72:13-42
 	android:launchMode
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:68:13-48
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:69:13-48
 	android:exported
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:67:13-37
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:68:13-37
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:66:19-66
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:67:19-66
 service#com.callx.app.services.CallxMessagingService
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:74:9-79:19
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:75:9-80:19
 	android:exported
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:75:13-37
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:76:13-37
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:74:18-64
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:75:18-64
 intent-filter#action:name:com.google.firebase.MESSAGING_EVENT
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:76:13-78:29
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:77:13-79:29
 action#com.google.firebase.MESSAGING_EVENT
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:77:17-77
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:78:17-77
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:77:25-75
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:78:25-75
 service#com.callx.app.services.CallForegroundService
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:80:9-82:56
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:81:9-83:56
 	android:exported
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:81:13-37
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:82:13-37
 	android:foregroundServiceType
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:82:13-54
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:83:13-54
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:80:18-64
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:81:18-64
 receiver#com.callx.app.services.NotificationActionReceiver
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:84:9-85:39
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:85:9-86:39
 	android:exported
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:85:13-37
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:86:13-37
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:84:19-70
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:85:19-70
 provider#androidx.core.content.FileProvider
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:87:9-95:20
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:88:9-96:20
 	android:grantUriPermissions
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:91:13-47
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:92:13-47
 	android:authorities
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:89:13-61
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:90:13-61
 	android:exported
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:90:13-37
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:91:13-37
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:88:13-62
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:89:13-62
 meta-data#android.support.FILE_PROVIDER_PATHS
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:92:13-94:53
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:93:13-95:53
 	android:resource
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:94:17-51
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:95:17-51
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:93:17-67
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:94:17-67
 meta-data#com.google.firebase.messaging.default_notification_channel_id
-ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:97:9-99:42
+ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:98:9-100:42
 	android:value
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:99:13-40
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:100:13-40
 	android:name
-		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:98:13-89
+		ADDED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml:99:13-89
 uses-sdk
 INJECTED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
 INJECTED from /home/runner/work/callx/callx/app/src/main/AndroidManifest.xml

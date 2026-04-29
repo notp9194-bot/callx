@@ -81,6 +81,9 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
         <activity
+            android:name="com.callx.app.activities.RequestsActivity"
+            android:exported="false" />
+        <activity
             android:name="com.callx.app.activities.ProfileActivity"
             android:exported="false" />
         <activity

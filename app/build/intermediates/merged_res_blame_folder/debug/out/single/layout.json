@@ -1,11 +1,11 @@
 [
     {
-        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_call.xml",
-        "source": "com.callx.app-main-52:/layout/activity_call.xml"
-    },
-    {
         "merged": "com.callx.app-mergeDebugResources-49:/layout/item_call_history.xml",
         "source": "com.callx.app-main-52:/layout/item_call_history.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_call.xml",
+        "source": "com.callx.app-main-52:/layout/activity_call.xml"
     },
     {
         "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_profile.xml",
@@ -26,6 +26,10 @@
     {
         "merged": "com.callx.app-mergeDebugResources-49:/layout/fragment_updates.xml",
         "source": "com.callx.app-main-52:/layout/fragment_updates.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/activity_requests.xml",
+        "source": "com.callx.app-main-52:/layout/activity_requests.xml"
     },
     {
         "merged": "com.callx.app-mergeDebugResources-49:/layout/fragment_calls.xml",
@@ -80,12 +84,12 @@
         "source": "com.callx.app-main-52:/layout/activity_incoming_call.xml"
     },
     {
-        "merged": "com.callx.app-mergeDebugResources-49:/layout/item_message_sent.xml",
-        "source": "com.callx.app-main-52:/layout/item_message_sent.xml"
-    },
-    {
         "merged": "com.callx.app-mergeDebugResources-49:/layout/item_group.xml",
         "source": "com.callx.app-main-52:/layout/item_group.xml"
+    },
+    {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/item_message_sent.xml",
+        "source": "com.callx.app-main-52:/layout/item_message_sent.xml"
     },
     {
         "merged": "com.callx.app-mergeDebugResources-49:/layout/fragment_groups.xml",

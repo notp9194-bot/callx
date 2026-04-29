@@ -32,12 +32,12 @@
         "source": "com.callx.app-main-52:/drawable/circle_accept.xml"
     },
     {
-        "merged": "com.callx.app-merged_res-50:/drawable_ic_mic.xml.flat",
-        "source": "com.callx.app-main-52:/drawable/ic_mic.xml"
-    },
-    {
         "merged": "com.callx.app-merged_res-50:/layout_activity_main.xml.flat",
         "source": "com.callx.app-main-52:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_mic.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_mic.xml"
     },
     {
         "merged": "com.callx.app-merged_res-50:/layout_activity_new_status.xml.flat",
@@ -46,6 +46,10 @@
     {
         "merged": "com.callx.app-merged_res-50:/drawable_ic_gallery.xml.flat",
         "source": "com.callx.app-main-52:/drawable/ic_gallery.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_bg_request_banner.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/bg_request_banner.xml"
     },
     {
         "merged": "com.callx.app-merged_res-50:/drawable_ic_send.xml.flat",
@@ -164,6 +168,10 @@
         "source": "com.callx.app-main-52:/layout/activity_status_viewer.xml"
     },
     {
+        "merged": "com.callx.app-merged_res-50:/drawable_ic_person_add.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/ic_person_add.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/layout_activity_call.xml.flat",
         "source": "com.callx.app-main-52:/layout/activity_call.xml"
     },
@@ -220,6 +228,10 @@
         "source": "com.callx.app-main-52:/mipmap-anydpi-v26/ic_launcher_round.xml"
     },
     {
+        "merged": "com.callx.app-merged_res-50:/drawable_bg_circle_white.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/bg_circle_white.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/xml_network_security_config.xml.flat",
         "source": "com.callx.app-main-52:/xml/network_security_config.xml"
     },
@@ -254,6 +266,10 @@
     {
         "merged": "com.callx.app-merged_res-50:/drawable_rounded_input_bg.xml.flat",
         "source": "com.callx.app-main-52:/drawable/rounded_input_bg.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/layout_activity_requests.xml.flat",
+        "source": "com.callx.app-main-52:/layout/activity_requests.xml"
     },
     {
         "merged": "com.callx.app-merged_res-50:/drawable_ic_message_notification.xml.flat",

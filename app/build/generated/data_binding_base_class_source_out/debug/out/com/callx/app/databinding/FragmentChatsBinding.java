@@ -6,6 +6,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
@@ -21,16 +22,34 @@ public final class FragmentChatsBinding implements ViewBinding {
   private final FrameLayout rootView;
 
   @NonNull
+  public final LinearLayout bannerRequests;
+
+  @NonNull
   public final LinearLayout emptyState;
 
   @NonNull
   public final RecyclerView rvChats;
 
-  private FragmentChatsBinding(@NonNull FrameLayout rootView, @NonNull LinearLayout emptyState,
-      @NonNull RecyclerView rvChats) {
+  @NonNull
+  public final TextView tvRequestCount;
+
+  @NonNull
+  public final TextView tvRequestSub;
+
+  @NonNull
+  public final TextView tvRequestTitle;
+
+  private FragmentChatsBinding(@NonNull FrameLayout rootView, @NonNull LinearLayout bannerRequests,
+      @NonNull LinearLayout emptyState, @NonNull RecyclerView rvChats,
+      @NonNull TextView tvRequestCount, @NonNull TextView tvRequestSub,
+      @NonNull TextView tvRequestTitle) {
     this.rootView = rootView;
+    this.bannerRequests = bannerRequests;
     this.emptyState = emptyState;
     this.rvChats = rvChats;
+    this.tvRequestCount = tvRequestCount;
+    this.tvRequestSub = tvRequestSub;
+    this.tvRequestTitle = tvRequestTitle;
   }
 
   @Override
@@ -60,6 +79,12 @@ public final class FragmentChatsBinding implements ViewBinding {
     // This is done to optimize the compiled bytecode for size and performance.
     int id;
     missingId: {
+      id = R.id.banner_requests;
+      LinearLayout bannerRequests = ViewBindings.findChildViewById(rootView, id);
+      if (bannerRequests == null) {
+        break missingId;
+      }
+
       id = R.id.empty_state;
       LinearLayout emptyState = ViewBindings.findChildViewById(rootView, id);
       if (emptyState == null) {
@@ -72,7 +97,26 @@ public final class FragmentChatsBinding implements ViewBinding {
         break missingId;
       }
 
-      return new FragmentChatsBinding((FrameLayout) rootView, emptyState, rvChats);
+      id = R.id.tv_request_count;
+      TextView tvRequestCount = ViewBindings.findChildViewById(rootView, id);
+      if (tvRequestCount == null) {
+        break missingId;
+      }
+
+      id = R.id.tv_request_sub;
+      TextView tvRequestSub = ViewBindings.findChildViewById(rootView, id);
+      if (tvRequestSub == null) {
+        break missingId;
+      }
+
+      id = R.id.tv_request_title;
+      TextView tvRequestTitle = ViewBindings.findChildViewById(rootView, id);
+      if (tvRequestTitle == null) {
+        break missingId;
+      }
+
+      return new FragmentChatsBinding((FrameLayout) rootView, bannerRequests, emptyState, rvChats,
+          tvRequestCount, tvRequestSub, tvRequestTitle);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));
