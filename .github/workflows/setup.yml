@@ -17,6 +17,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Full Project Structure
+        env:
+          RUN_NUM: ${{ github.run_number }}
         run: |
           # =====================================================================
           # CallX v2 — Production grade Android chat + call + group + status app
@@ -196,7 +198,7 @@ jobs:
           ENDOFFILE
 
           # --- Auto-bump version (har workflow run pe alag versionCode) ---
-          RUN_NUM="${{ github.run_number }}"
+          # RUN_NUM env var top pe inject hua hai (github.run_number se)
           VCODE=$((100 + RUN_NUM))
           VNAME="2.1.${RUN_NUM}"
           sed -i "s/__VERSION_CODE__/${VCODE}/" app/build.gradle
