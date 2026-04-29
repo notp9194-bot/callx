@@ -149,8 +149,6 @@ jobs:
                   debug {
                       minifyEnabled false
                       debuggable true
-                      applicationIdSuffix ".debug"
-                      versionNameSuffix "-debug"
                   }
                   release {
                       minifyEnabled true
