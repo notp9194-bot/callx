@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.CallX" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">#005c97</item>
+        <item name="colorPrimaryVariant">#004a7a</item>
+        <item name="colorSecondary">#34B7F1</item>
+        <item name="colorOnPrimary">#ffffff</item>
+        <item name="android:statusBarColor">#004a7a</item>
+    </style>
+</resources>

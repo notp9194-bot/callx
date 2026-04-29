@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="callx_header_bg">#005c97</color>
+    <color name="callx_accent_blue">#34B7F1</color>
+    <color name="callx_message_out_bg">#e1f6fb</color>
+    <color name="callx_message_in_bg">#ffffff</color>
+    <color name="callx_app_bg">#f0f2f5</color>
+    <color name="callx_chat_bg">#e5ddd5</color>
+    <color name="callx_icon_color">#f0f2f5</color>
+    <color name="callx_text_primary">#111b21</color>
+    <color name="callx_text_secondary">#667781</color>
+    <color name="callx_border_color">#e9edef</color>
+    <color name="callx_button_color">#008069</color>
+    <color name="callx_end_call">#e91e63</color>
+    <color name="callx_accept_call">#4CAF50</color>
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+</resources>
