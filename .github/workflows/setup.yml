@@ -570,6 +570,26 @@ jobs:
           </vector>
           ENDOFFILE
 
+          cat > app/src/main/res/drawable/ic_send_fill.xml << 'ENDOFFILE'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp"
+              android:viewportWidth="24" android:viewportHeight="24"
+              android:tint="@color/brand_primary">
+              <path android:fillColor="#FFFFFFFF"
+                  android:pathData="M2.01,21L23,12 2.01,3 2,10l15,2 -15,2z"/>
+          </vector>
+          ENDOFFILE
+
+          cat > app/src/main/res/drawable/ic_arrow_back.xml << 'ENDOFFILE'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp"
+              android:viewportWidth="24" android:viewportHeight="24"
+              android:tint="?android:attr/textColorPrimary">
+              <path android:fillColor="#FFFFFFFF"
+                  android:pathData="M20,11H7.83l5.59,-5.59L12,4l-8,8 8,8 1.41,-1.41L7.83,13H20z"/>
+          </vector>
+          ENDOFFILE
+
           cat > app/src/main/res/drawable/ic_mic.xml << 'ENDOFFILE'
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="24dp" android:height="24dp"
