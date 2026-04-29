@@ -1,8 +1,6 @@
 package com.callx.app.fragments;
 import android.os.Bundle;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
+import android.view.*;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -11,15 +9,15 @@ import com.callx.app.adapters.ContactAdapter;
 import com.callx.app.models.User;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.*;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 public class ChatsFragment extends Fragment {
     private RecyclerView rv;
     private ContactAdapter adapter;
     private List<User> contacts = new ArrayList<>();
     private String currentUid;
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                             Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_chats, container, false);
         rv = view.findViewById(R.id.rv_chats);
         rv.setLayoutManager(new LinearLayoutManager(getContext()));

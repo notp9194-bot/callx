@@ -1,7 +1,5 @@
 package com.callx.app.adapters;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
+import android.view.*;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -20,7 +18,8 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MsgViewH
     }
     @NonNull @Override
     public MsgViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        int layout = viewType == SENT ? R.layout.item_message_sent : R.layout.item_message_received;
+        int layout = viewType == SENT
+            ? R.layout.item_message_sent : R.layout.item_message_received;
         View v = LayoutInflater.from(parent.getContext()).inflate(layout, parent, false);
         return new MsgViewHolder(v);
     }

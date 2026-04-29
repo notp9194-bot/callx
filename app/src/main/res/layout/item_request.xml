@@ -5,13 +5,15 @@
     android:orientation="horizontal"
     android:padding="16dp"
     android:background="#ffffff"
-    android:gravity="center_vertical">
+    android:gravity="center_vertical"
+    android:layout_marginBottom="4dp">
     <TextView
         android:id="@+id/tv_avatar"
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:gravity="center"
         android:textSize="24sp"
+        android:text="😊"
         android:background="@drawable/circle_avatar_bg"/>
     <LinearLayout
         android:layout_width="0dp"
@@ -28,7 +30,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="wants to connect"
+            android:text="contact request bheja hai"
             android:textColor="#667781"/>
     </LinearLayout>
     <Button

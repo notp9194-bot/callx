@@ -33,15 +33,14 @@
             android:textColor="#667781"
             android:textSize="14sp"
             android:maxLines="1"
-            android:ellipsize="end"/>
+            android:ellipsize="end"
+            android:text="Tap karke chat karo"/>
     </LinearLayout>
-    <TextView
-        android:id="@+id/tv_unread"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
-        android:gravity="center"
-        android:textColor="#ffffff"
-        android:textSize="12sp"
-        android:background="@drawable/circle_green"
-        android:visibility="gone"/>
+    <ImageButton
+        android:id="@+id/btn_call"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@null"
+        android:src="@android:drawable/ic_menu_call"
+        android:tint="#008069"/>
 </LinearLayout>

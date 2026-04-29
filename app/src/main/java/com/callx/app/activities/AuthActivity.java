@@ -7,7 +7,10 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.callx.app.databinding.ActivityAuthBinding;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.UserProfileChangeRequest;
 import com.google.firebase.database.FirebaseDatabase;
+import java.util.HashMap;
+import java.util.Map;
 public class AuthActivity extends AppCompatActivity {
     private ActivityAuthBinding binding;
     private FirebaseAuth auth;
@@ -18,16 +21,12 @@ public class AuthActivity extends AppCompatActivity {
         binding = ActivityAuthBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
         auth = FirebaseAuth.getInstance();
-        FirebaseUser currentUser = auth.getCurrentUser();
-        if (currentUser != null) {
-            goToMain();
-            return;
-        }
+        if (auth.getCurrentUser() != null) { goToMain(); return; }
         binding.btnLogin.setOnClickListener(v -> {
             String email = binding.etEmail.getText().toString().trim();
             String password = binding.etPassword.getText().toString().trim();
             if (email.isEmpty() || password.isEmpty()) {
-                showError("Please fill all fields");
+                showError("Email aur password fill karo");
                 return;
             }
             if (isLoginMode) {
@@ -35,10 +34,31 @@ public class AuthActivity extends AppCompatActivity {
                     .addOnSuccessListener(r -> goToMain())
                     .addOnFailureListener(e -> showError(e.getMessage()));
             } else {
+                String name = binding.etName.getText().toString().trim();
+                if (name.isEmpty()) { showError("Naam bhi daalo"); return; }
                 auth.createUserWithEmailAndPassword(email, password)
                     .addOnSuccessListener(r -> {
-                        saveUserProfile(r.getUser().getUid(), email);
-                        goToMain();
+                        FirebaseUser user = r.getUser();
+                        if (user == null) return;
+                        // Display name set karo
+                        user.updateProfile(new UserProfileChangeRequest.Builder()
+                            .setDisplayName(name).build());
+                        // Unique callxId
+                        String callxId = "callx_" + user.getUid().substring(0, 8).toLowerCase();
+                        Map<String, Object> data = new HashMap<>();
+                        data.put("uid", user.getUid());
+                        data.put("email", email);
+                        data.put("name", name);
+                        data.put("emoji", "😊");
+                        data.put("callxId", callxId);
+                        FirebaseDatabase.getInstance().getReference("users")
+                            .child(user.getUid()).setValue(data)
+                            .addOnSuccessListener(x -> {
+                                Toast.makeText(this,
+                                    "Account bana!\nTumhara CallX ID: " + callxId,
+                                    Toast.LENGTH_LONG).show();
+                                goToMain();
+                            });
                     })
                     .addOnFailureListener(e -> showError(e.getMessage()));
             }
@@ -47,16 +67,10 @@ public class AuthActivity extends AppCompatActivity {
             isLoginMode = !isLoginMode;
             binding.btnLogin.setText(isLoginMode ? "Login" : "Sign Up");
             binding.btnSignup.setText(isLoginMode ? "Sign Up" : "Back to Login");
+            binding.tilName.setVisibility(isLoginMode ? View.GONE : View.VISIBLE);
         });
-    }
-    private void saveUserProfile(String uid, String email) {
-        java.util.Map<String, Object> user = new java.util.HashMap<>();
-        user.put("uid", uid);
-        user.put("email", email);
-        user.put("name", email.split("@")[0]);
-        user.put("emoji", "😊");
-        user.put("callxId", uid.substring(0, 8).toUpperCase());
-        FirebaseDatabase.getInstance().getReference("users").child(uid).setValue(user);
+        // Name field pehle hidden
+        binding.tilName.setVisibility(View.GONE);
     }
     private void showError(String msg) {
         binding.tvError.setVisibility(View.VISIBLE);

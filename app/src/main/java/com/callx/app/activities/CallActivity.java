@@ -20,10 +20,10 @@ public class CallActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         binding = ActivityCallBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
-        currentUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
-        partnerUid = getIntent().getStringExtra("partnerUid");
-        callType = getIntent().getStringExtra("callType");
-        isCaller = getIntent().getBooleanExtra("isCaller", true);
+        currentUid  = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        partnerUid  = getIntent().getStringExtra("partnerUid");
+        callType    = getIntent().getStringExtra("callType");
+        isCaller    = getIntent().getBooleanExtra("isCaller", true);
         String partnerName = getIntent().getStringExtra("partnerName");
         binding.tvCallerName.setText(partnerName != null ? partnerName : "Unknown");
         binding.tvCallStatus.setText("Connecting...");

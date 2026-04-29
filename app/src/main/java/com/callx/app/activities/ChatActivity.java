@@ -7,10 +7,7 @@ import com.callx.app.databinding.ActivityChatBinding;
 import com.callx.app.models.Message;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.*;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 public class ChatActivity extends AppCompatActivity {
     private ActivityChatBinding binding;
     private MessageAdapter adapter;
@@ -29,7 +26,7 @@ public class ChatActivity extends AppCompatActivity {
         String partnerName = getIntent().getStringExtra("partnerName");
         binding.toolbar.setTitle(partnerName != null ? partnerName : "Chat");
         String[] ids = {currentUid, partnerUid};
-        java.util.Arrays.sort(ids);
+        Arrays.sort(ids);
         chatId = ids[0] + "_" + ids[1];
         adapter = new MessageAdapter(messages, currentUid);
         binding.rvMessages.setLayoutManager(new LinearLayoutManager(this));
@@ -62,8 +59,5 @@ public class ChatActivity extends AppCompatActivity {
         binding.etMessage.setText("");
     }
     @Override
-    public boolean onSupportNavigateUp() {
-        finish();
-        return true;
-    }
+    public boolean onSupportNavigateUp() { finish(); return true; }
 }
