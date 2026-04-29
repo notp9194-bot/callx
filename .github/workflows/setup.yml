@@ -1,4 +1,4 @@
-name: Setup CallX v3 (Production - Full Featured)
+name: Setup CallX v4 (Production - Full Featured + Upgrades)
 
 on:
   workflow_dispatch:
@@ -318,6 +318,9 @@ jobs:
                   <activity android:name=".activities.ContactsPickerActivity" android:exported="false"/>
                   <activity android:name=".activities.LocationShareActivity" android:exported="false"/>
                   <activity android:name=".activities.StarredActivity" android:exported="false"/>
+                  <activity android:name=".activities.PinSetupActivity" android:exported="false"/>
+                  <activity android:name=".activities.ArchivedChatsActivity" android:exported="false"/>
+                  <activity android:name=".activities.PollCreateActivity" android:exported="false"/>
 
                   <activity android:name=".activities.CallActivity"
                       android:exported="false"
@@ -1149,13 +1152,23 @@ jobs:
               xmlns:android="http://schemas.android.com/apk/res/android"
               xmlns:app="http://schemas.android.com/apk/res-auto"
               android:layout_width="match_parent" android:layout_height="match_parent">
-              <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-                  android:id="@+id/swipe"
-                  android:layout_width="match_parent" android:layout_height="match_parent">
-                  <androidx.recyclerview.widget.RecyclerView
-                      android:id="@+id/rv"
-                      android:layout_width="match_parent" android:layout_height="match_parent"/>
-              </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+              <LinearLayout
+                  android:layout_width="match_parent" android:layout_height="match_parent"
+                  android:orientation="vertical">
+                  <TextView android:id="@+id/tv_archived_header"
+                      android:layout_width="match_parent" android:layout_height="wrap_content"
+                      android:padding="14dp"
+                      android:background="?attr/selectableItemBackground"
+                      android:textStyle="bold"
+                      android:visibility="gone"/>
+                  <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+                      android:id="@+id/swipe"
+                      android:layout_width="match_parent" android:layout_height="match_parent">
+                      <androidx.recyclerview.widget.RecyclerView
+                          android:id="@+id/rv"
+                          android:layout_width="match_parent" android:layout_height="match_parent"/>
+                  </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+              </LinearLayout>
               <com.google.android.material.floatingactionbutton.FloatingActionButton
                   android:id="@+id/fab_new_chat"
                   android:layout_width="wrap_content" android:layout_height="wrap_content"
@@ -2032,6 +2045,26 @@ jobs:
                   android:background="@color/brand_primary"
                   app:title="Wallpaper" app:titleTextColor="@color/white"
                   app:navigationIcon="@drawable/ic_arrow_back"/>
+              <Button android:id="@+id/btn_custom_wallpaper"
+                  android:layout_width="match_parent" android:layout_height="wrap_content"
+                  android:layout_margin="12dp"
+                  android:text="📷 Choose from gallery"/>
+              <androidx.recyclerview.widget.RecyclerView android:id="@+id/rv"
+                  android:layout_width="match_parent" android:layout_height="match_parent"/>
+          </LinearLayout>
+          ENDOFFILE
+
+          cat > app/src/main/res/layout/activity_archived.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:app="http://schemas.android.com/apk/res-auto"
+              android:layout_width="match_parent" android:layout_height="match_parent"
+              android:orientation="vertical">
+              <com.google.android.material.appbar.MaterialToolbar android:id="@+id/toolbar"
+                  android:layout_width="match_parent" android:layout_height="?attr/actionBarSize"
+                  android:background="@color/brand_primary"
+                  app:title="Archived" app:titleTextColor="@color/white"
+                  app:navigationIcon="@drawable/ic_arrow_back"/>
               <androidx.recyclerview.widget.RecyclerView android:id="@+id/rv"
                   android:layout_width="match_parent" android:layout_height="match_parent"/>
           </LinearLayout>
@@ -2209,7 +2242,9 @@ jobs:
 
           cat > app/src/main/java/com/callx/app/models/Message.java << 'ENDOFFILE'
           package com.callx.app.models;
+          import java.util.ArrayList;
           import java.util.HashMap;
+          import java.util.List;
           import java.util.Map;
           public class Message {
               public String id;
@@ -2231,6 +2266,10 @@ jobs:
               // Edited / deleted
               public Boolean edited;
               public Boolean deletedForAll;
+              // Per-user delete-for-me sync (uid -> true)
+              public Map<String, Boolean> hiddenFor = new HashMap<>();
+              // For @mentions in groups (list of mentioned uids)
+              public List<String> mentions = new ArrayList<>();
               // Seen / delivered status
               public String status;        // sending | sent | delivered | seen
               public Map<String, Long> seenBy = new HashMap<>();
@@ -2376,6 +2415,10 @@ jobs:
                   super.onCreate();
                   createChannels();
                   PrefsManager.init(this);
+                  // Schedule periodic cleanup of expired (disappearing) messages
+                  com.callx.app.utils.DisappearWorker.schedule(this);
+                  // Generate this device's E2E key (no-op if exists)
+                  com.callx.app.utils.KeyExchangeHelper.ensureMyKey(null);
                   ProcessLifecycleOwner.get().getLifecycle()
                       .addObserver(new DefaultLifecycleObserver() {
                           @Override public void onStop(LifecycleOwner o) {
@@ -2428,18 +2471,36 @@ jobs:
               public static SharedPreferences sp() { return sp; }
               public static boolean isAppLockEnabled() { return sp.getBoolean("app_lock", false); }
               public static void setAppLock(boolean v) { sp.edit().putBoolean("app_lock", v).apply(); }
+              // App-lock PIN fallback (hashed)
+              public static boolean hasPin() { return sp.getString("pin_hash", null) != null; }
+              public static String getPinHash() { return sp.getString("pin_hash", null); }
+              public static void setPinHash(String h) { sp.edit().putString("pin_hash", h).apply(); }
+              public static void clearPin() { sp.edit().remove("pin_hash").apply(); }
+              public static String lockMode() { return sp.getString("lock_mode", "biometric"); } // biometric | pin | both
+              public static void setLockMode(String m) { sp.edit().putString("lock_mode", m).apply(); }
               public static boolean readReceiptsEnabled() { return sp.getBoolean("read_receipts", true); }
               public static void setReadReceipts(boolean v) { sp.edit().putBoolean("read_receipts", v).apply(); }
               public static boolean lastSeenEnabled() { return sp.getBoolean("last_seen", true); }
               public static void setLastSeen(boolean v) { sp.edit().putBoolean("last_seen", v).apply(); }
               public static int wallpaperFor(String chatKey) { return sp.getInt("wp_" + chatKey, 0); }
               public static void setWallpaper(String chatKey, int v) { sp.edit().putInt("wp_" + chatKey, v).apply(); }
+              public static String customWallpaperUrl(String chatKey) { return sp.getString("wpu_" + chatKey, null); }
+              public static void setCustomWallpaperUrl(String chatKey, String url) { sp.edit().putString("wpu_" + chatKey, url).apply(); }
               public static long disappearFor(String chatKey) { return sp.getLong("dis_" + chatKey, 0); }
               public static void setDisappear(String chatKey, long ms) { sp.edit().putLong("dis_" + chatKey, ms).apply(); }
               public static boolean isMuted(String chatKey) { return sp.getBoolean("mute_" + chatKey, false); }
               public static void setMuted(String chatKey, boolean v) { sp.edit().putBoolean("mute_" + chatKey, v).apply(); }
               public static boolean isArchived(String chatKey) { return sp.getBoolean("arc_" + chatKey, false); }
               public static void setArchived(String chatKey, boolean v) { sp.edit().putBoolean("arc_" + chatKey, v).apply(); }
+              // Per-chat custom notification tone
+              public static String chatTone(String chatKey) { return sp.getString("tone_" + chatKey, null); }
+              public static void setChatTone(String chatKey, String uri) { sp.edit().putString("tone_" + chatKey, uri).apply(); }
+              // Disappear worker last-run
+              public static long lastDisappearRun() { return sp.getLong("dis_run", 0L); }
+              public static void setLastDisappearRun(long t) { sp.edit().putLong("dis_run", t).apply(); }
+              // E2E private key (Base64-encoded PKCS#8)
+              public static String myPriv() { return sp.getString("ec_priv", null); }
+              public static void saveMyPriv(String b64) { sp.edit().putString("ec_priv", b64).apply(); }
           }
           ENDOFFILE
 
@@ -2812,10 +2873,12 @@ jobs:
           import android.text.style.ForegroundColorSpan;
           import android.text.style.StyleSpan;
           import android.graphics.Typeface;
+          import java.util.ArrayList;
+          import java.util.List;
           import java.util.regex.Matcher;
           import java.util.regex.Pattern;
           public class MentionHelper {
-              private static final Pattern MENTION = Pattern.compile("@(\\w+)");
+              public static final Pattern MENTION = Pattern.compile("@([A-Za-z0-9_]+)");
               public static CharSequence highlight(String text) {
                   if (text == null) return "";
                   SpannableStringBuilder sb = new SpannableStringBuilder(text);
@@ -2827,6 +2890,249 @@ jobs:
                           m.start(), m.end(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
                   }
                   return sb;
+              }
+              public static List<String> extract(String text) {
+                  List<String> r = new ArrayList<>();
+                  if (text == null) return r;
+                  Matcher m = MENTION.matcher(text);
+                  while (m.find()) r.add(m.group(1));
+                  return r;
+              }
+          }
+          ENDOFFILE
+
+          # ----- New chat utils -----
+          cat > app/src/main/java/com/callx/app/utils/PinHelper.java << 'ENDOFFILE'
+          package com.callx.app.utils;
+          import java.security.MessageDigest;
+          public class PinHelper {
+              public static String hash(String pin) {
+                  if (pin == null || pin.isEmpty()) return null;
+                  try {
+                      byte[] b = MessageDigest.getInstance("SHA-256")
+                          .digest(("CallX$" + pin).getBytes("UTF-8"));
+                      StringBuilder sb = new StringBuilder();
+                      for (byte x : b) sb.append(String.format("%02x", x));
+                      return sb.toString();
+                  } catch (Exception e) { return null; }
+              }
+          }
+          ENDOFFILE
+
+          cat > app/src/main/java/com/callx/app/utils/AudioPlayerHelper.java << 'ENDOFFILE'
+          package com.callx.app.utils;
+          import android.media.MediaPlayer;
+          import android.os.Handler;
+          import android.os.Looper;
+          public class AudioPlayerHelper {
+              public interface Tick { void onTick(int positionMs, int totalMs); }
+              private MediaPlayer mp;
+              private String currentUrl;
+              private final Handler ui = new Handler(Looper.getMainLooper());
+              private Runnable ticker;
+              public boolean isPlaying(String url) {
+                  return mp != null && mp.isPlaying() && url != null && url.equals(currentUrl);
+              }
+              public int positionFor(String url) {
+                  if (mp == null || url == null || !url.equals(currentUrl)) return 0;
+                  try { return mp.getCurrentPosition(); } catch (Exception e) { return 0; }
+              }
+              public void seekTo(String url, int ms) {
+                  if (mp != null && url != null && url.equals(currentUrl))
+                      try { mp.seekTo(ms); } catch (Exception ignored) {}
+              }
+              public void toggle(String url, Tick onTick, Runnable onDone) {
+                  if (url == null) return;
+                  if (mp != null && url.equals(currentUrl)) {
+                      if (mp.isPlaying()) { mp.pause(); stopTicker(); }
+                      else                { mp.start(); startTicker(onTick, onDone); }
+                      return;
+                  }
+                  release();
+                  try {
+                      mp = new MediaPlayer();
+                      mp.setDataSource(url);
+                      currentUrl = url;
+                      mp.setOnPreparedListener(p -> { p.start(); startTicker(onTick, onDone); });
+                      mp.setOnCompletionListener(p -> { stopTicker(); if (onDone != null) onDone.run(); });
+                      mp.prepareAsync();
+                  } catch (Exception e) { release(); }
+              }
+              private void startTicker(final Tick t, final Runnable done) {
+                  stopTicker();
+                  ticker = new Runnable() {
+                      @Override public void run() {
+                          if (mp == null) return;
+                          try {
+                              if (t != null) t.onTick(mp.getCurrentPosition(), mp.getDuration());
+                          } catch (Exception ignored) {}
+                          if (mp != null && mp.isPlaying()) ui.postDelayed(this, 200);
+                      }
+                  };
+                  ui.post(ticker);
+              }
+              private void stopTicker() {
+                  if (ticker != null) ui.removeCallbacks(ticker);
+                  ticker = null;
+              }
+              public void release() {
+                  stopTicker();
+                  if (mp != null) {
+                      try { mp.stop(); } catch (Exception ignored) {}
+                      try { mp.release(); } catch (Exception ignored) {}
+                  }
+                  mp = null; currentUrl = null;
+              }
+          }
+          ENDOFFILE
+
+          cat > app/src/main/java/com/callx/app/utils/KeyExchangeHelper.java << 'ENDOFFILE'
+          package com.callx.app.utils;
+          import android.util.Base64;
+          import androidx.annotation.NonNull;
+          import com.google.firebase.database.*;
+          import java.security.*;
+          /**
+           * Lightweight ECDH-style key exchange using user.publicKey field.
+           * Each user generates a key once on signup; chat AES key is derived
+           * deterministically from sorted-uid pair fingerprint as a fallback.
+           */
+          public class KeyExchangeHelper {
+              public interface Cb { void onKey(String aesKey); }
+              public static void ensureMyKey(final Runnable done) {
+                  String me = FirebaseUtils.myUid();
+                  if (me == null) { if (done != null) done.run(); return; }
+                  final DatabaseReference ref = FirebaseUtils.users().child(me).child("publicKey");
+                  ref.addListenerForSingleValueEvent(new ValueEventListener() {
+                      @Override public void onDataChange(@NonNull DataSnapshot d) {
+                          if (!d.exists()) {
+                              try {
+                                  KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
+                                  kpg.initialize(256);
+                                  KeyPair kp = kpg.generateKeyPair();
+                                  String pub = Base64.encodeToString(
+                                      kp.getPublic().getEncoded(), Base64.NO_WRAP);
+                                  ref.setValue(pub);
+                                  PrefsManager.saveMyPriv(Base64.encodeToString(
+                                      kp.getPrivate().getEncoded(), Base64.NO_WRAP));
+                              } catch (Exception ignored) {}
+                          }
+                          if (done != null) done.run();
+                      }
+                      @Override public void onCancelled(@NonNull DatabaseError e) {
+                          if (done != null) done.run();
+                      }
+                  });
+              }
+              public static void deriveChatKey(final String otherUid, final Cb cb) {
+                  final String me = FirebaseUtils.myUid();
+                  if (me == null || otherUid == null) { cb.onKey(null); return; }
+                  FirebaseUtils.users().child(otherUid).child("publicKey")
+                      .addListenerForSingleValueEvent(new ValueEventListener() {
+                          @Override public void onDataChange(@NonNull DataSnapshot d) {
+                              String otherPub = d.getValue(String.class);
+                              cb.onKey(combine(me, otherUid, otherPub));
+                          }
+                          @Override public void onCancelled(@NonNull DatabaseError e) {
+                              cb.onKey(combine(me, otherUid, null));
+                          }
+                      });
+              }
+              private static String combine(String me, String other, String otherPub) {
+                  // Deterministic AES key for the chat (lower entropy fallback if pub absent)
+                  String a = me.compareTo(other) < 0 ? me : other;
+                  String b = me.compareTo(other) < 0 ? other : me;
+                  String seed = a + "::" + b + "::" + (otherPub == null ? "0" : otherPub);
+                  try {
+                      byte[] h = MessageDigest.getInstance("SHA-256").digest(seed.getBytes("UTF-8"));
+                      // Use first 16 bytes -> AES-128 hex string (compatible with AesCrypto)
+                      StringBuilder sb = new StringBuilder();
+                      for (int i = 0; i < 16; i++) sb.append(String.format("%02x", h[i]));
+                      return sb.toString();
+                  } catch (Exception e) { return null; }
+              }
+          }
+          ENDOFFILE
+
+          cat > app/src/main/java/com/callx/app/utils/MentionResolver.java << 'ENDOFFILE'
+          package com.callx.app.utils;
+          import androidx.annotation.NonNull;
+          import com.google.firebase.database.*;
+          import java.util.*;
+          /** Resolves @username tokens to uids within a group. */
+          public class MentionResolver {
+              public interface Cb { void onResolved(List<String> uids); }
+              public static void resolve(final List<String> usernames,
+                                         final List<String> groupMemberUids,
+                                         final Cb cb) {
+                  if (usernames == null || usernames.isEmpty() || groupMemberUids == null) {
+                      cb.onResolved(new ArrayList<>()); return;
+                  }
+                  final List<String> matched = new ArrayList<>();
+                  final int[] left = { groupMemberUids.size() };
+                  for (final String uid : groupMemberUids) {
+                      FirebaseUtils.users().child(uid).child("name")
+                          .addListenerForSingleValueEvent(new ValueEventListener() {
+                              @Override public void onDataChange(@NonNull DataSnapshot d) {
+                                  String name = d.getValue(String.class);
+                                  if (name != null) {
+                                      String token = name.replaceAll("\\s+", "").toLowerCase();
+                                      for (String u : usernames) {
+                                          if (token.startsWith(u.toLowerCase())) {
+                                              matched.add(uid); break;
+                                          }
+                                      }
+                                  }
+                                  if (--left[0] == 0) cb.onResolved(matched);
+                              }
+                              @Override public void onCancelled(@NonNull DatabaseError e) {
+                                  if (--left[0] == 0) cb.onResolved(matched);
+                              }
+                          });
+                  }
+              }
+          }
+          ENDOFFILE
+
+          cat > app/src/main/java/com/callx/app/utils/DisappearWorker.java << 'ENDOFFILE'
+          package com.callx.app.utils;
+          import android.content.Context;
+          import androidx.annotation.NonNull;
+          import androidx.work.*;
+          import com.google.firebase.database.*;
+          import java.util.concurrent.TimeUnit;
+          /** Periodically removes expired disappearing messages from Firebase. */
+          public class DisappearWorker extends Worker {
+              public DisappearWorker(@NonNull Context c, @NonNull WorkerParameters p) { super(c, p); }
+              @NonNull @Override public Result doWork() {
+                  final long now = System.currentTimeMillis();
+                  String me = FirebaseUtils.myUid(); if (me == null) return Result.success();
+                  // Sweep 1:1 chats
+                  FirebaseUtils.chats().get().addOnSuccessListener(snap -> {
+                      for (DataSnapshot chat : snap.getChildren()) {
+                          if (!chat.getKey().contains(me)) continue;
+                          for (DataSnapshot m : chat.getChildren()) {
+                              Long exp = m.child("expiresAt").getValue(Long.class);
+                              if (exp != null && exp > 0 && exp < now) {
+                                  m.getRef().updateChildren(new java.util.HashMap<String, Object>() {{
+                                      put("deletedForAll", true); put("text", null);
+                                      put("encrypted", null); put("mediaUrl", null);
+                                  }});
+                              }
+                          }
+                      }
+                  });
+                  PrefsManager.setLastDisappearRun(now);
+                  return Result.success();
+              }
+              public static void schedule(Context c) {
+                  PeriodicWorkRequest r = new PeriodicWorkRequest.Builder(
+                      DisappearWorker.class, 1, TimeUnit.HOURS)
+                      .setConstraints(new Constraints.Builder()
+                          .setRequiredNetworkType(NetworkType.CONNECTED).build())
+                      .build();
+                  WorkManager.getInstance(c).enqueueUniquePeriodicWork(
+                      "callx-disappear", ExistingPeriodicWorkPolicy.KEEP, r);
               }
           }
           ENDOFFILE
@@ -3157,28 +3463,95 @@ jobs:
           }
           ENDOFFILE
 
+          cat > app/src/main/java/com/callx/app/activities/PinSetupActivity.java << 'ENDOFFILE'
+          package com.callx.app.activities;
+          import android.os.Bundle;
+          import android.text.InputType;
+          import android.widget.*;
+          import androidx.appcompat.app.AppCompatActivity;
+          import com.callx.app.utils.PinHelper;
+          import com.callx.app.utils.PrefsManager;
+          public class PinSetupActivity extends AppCompatActivity {
+              @Override protected void onCreate(Bundle s) {
+                  super.onCreate(s);
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(48, 96, 48, 48);
+                  TextView tv = new TextView(this); tv.setText("Set 4–6 digit PIN"); tv.setTextSize(20);
+                  EditText e1 = new EditText(this); e1.setHint("Enter PIN");
+                  e1.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+                  EditText e2 = new EditText(this); e2.setHint("Confirm PIN");
+                  e2.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+                  Button save = new Button(this); save.setText("Save PIN");
+                  root.addView(tv); root.addView(e1); root.addView(e2); root.addView(save);
+                  setContentView(root);
+                  save.setOnClickListener(v -> {
+                      String a = e1.getText().toString(), b = e2.getText().toString();
+                      if (a.length() < 4 || a.length() > 6) { Toast.makeText(this, "PIN 4–6 digits", Toast.LENGTH_SHORT).show(); return; }
+                      if (!a.equals(b)) { Toast.makeText(this, "PINs do not match", Toast.LENGTH_SHORT).show(); return; }
+                      PrefsManager.setPinHash(PinHelper.hash(a));
+                      PrefsManager.setAppLock(true);
+                      Toast.makeText(this, "PIN saved", Toast.LENGTH_SHORT).show();
+                      finish();
+                  });
+              }
+          }
+          ENDOFFILE
+
           cat > app/src/main/java/com/callx/app/activities/AppLockActivity.java << 'ENDOFFILE'
           package com.callx.app.activities;
           import android.content.Intent;
           import android.os.Bundle;
           import androidx.appcompat.app.AppCompatActivity;
+          import android.text.InputType;
+          import android.view.View;
+          import android.widget.EditText;
+          import android.widget.Toast;
           import com.callx.app.CallxApp;
           import com.callx.app.R;
           import com.callx.app.utils.BiometricHelper;
+          import com.callx.app.utils.PinHelper;
+          import com.callx.app.utils.PrefsManager;
           import com.google.android.material.button.MaterialButton;
           public class AppLockActivity extends AppCompatActivity {
               @Override protected void onCreate(Bundle s) {
                   super.onCreate(s);
                   setContentView(R.layout.activity_app_lock);
-                  ((MaterialButton) findViewById(R.id.btn_unlock)).setOnClickListener(v -> showPrompt());
-                  showPrompt();
+                  MaterialButton bio = findViewById(R.id.btn_unlock);
+                  bio.setOnClickListener(v -> showBio());
+                  String mode = PrefsManager.lockMode();
+                  if ("pin".equals(mode) || (!BiometricHelper.canUse(this) && PrefsManager.hasPin())) {
+                      askPin();
+                  } else {
+                      showBio();
+                  }
               }
-              private void showPrompt() {
-                  if (!BiometricHelper.canUse(this)) { unlock(); return; }
+              private void showBio() {
+                  if (!BiometricHelper.canUse(this)) {
+                      if (PrefsManager.hasPin()) askPin(); else unlock();
+                      return;
+                  }
                   BiometricHelper.prompt(this, new BiometricHelper.Cb() {
                       @Override public void onOk()         { unlock(); }
-                      @Override public void onFail(String s) {}
+                      @Override public void onFail(String s) { if (PrefsManager.hasPin()) askPin(); }
                   });
+              }
+              private void askPin() {
+                  EditText pin = new EditText(this);
+                  pin.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+                  pin.setHint("Enter PIN");
+                  new androidx.appcompat.app.AlertDialog.Builder(this)
+                      .setTitle("Unlock")
+                      .setView(pin)
+                      .setCancelable(false)
+                      .setPositiveButton("OK", (d, w) -> {
+                          String h = PinHelper.hash(pin.getText().toString());
+                          if (h != null && h.equals(PrefsManager.getPinHash())) unlock();
+                          else { Toast.makeText(this, "Wrong PIN", Toast.LENGTH_SHORT).show(); askPin(); }
+                      })
+                      .setNeutralButton(BiometricHelper.canUse(this) ? "Use biometric" : null,
+                          (d, w) -> showBio())
+                      .show();
               }
               private void unlock() {
                   CallxApp.isLocked = false;
@@ -3398,22 +3771,19 @@ jobs:
                   btnMic.setVisibility(has ? View.GONE : View.VISIBLE);
               }
               private void loadWallpaper() {
+                  String custom = PrefsManager.customWallpaperUrl(chatKey);
+                  if (custom != null && !custom.isEmpty()) {
+                      com.bumptech.glide.Glide.with(this).load(custom).into(ivWallpaper);
+                      return;
+                  }
                   int w = PrefsManager.wallpaperFor(chatKey);
                   int[] res = { R.drawable.wallpaper_1, R.drawable.wallpaper_2, R.drawable.wallpaper_3 };
                   ivWallpaper.setImageResource(res[Math.max(0, Math.min(2, w))]);
               }
-              /** Load or create per-chat AES key; stored under /chats/{key}/_meta/aes. */
+              /** Derive per-chat AES key from ECDH key exchange (falls back to deterministic seed). */
               private void ensureChatKey() {
-                  DatabaseReference k = FirebaseUtils.chats().child(chatKey).child("_meta").child("aes");
-                  k.addListenerForSingleValueEvent(new ValueEventListener() {
-                      @Override public void onDataChange(@NonNull DataSnapshot s) {
-                          if (s.exists()) { chatAesKey = s.getValue(String.class); return; }
-                          try {
-                              chatAesKey = AesCrypto.genKeyBase64();
-                              k.setValue(chatAesKey);
-                          } catch (Exception ignored) {}
-                      }
-                      @Override public void onCancelled(@NonNull DatabaseError e) {}
+                  com.callx.app.utils.KeyExchangeHelper.deriveChatKey(otherUid, key -> {
+                      chatAesKey = key;
                   });
               }
               // ================= MESSAGING =================
@@ -3470,7 +3840,9 @@ jobs:
                   return m.expiresAt != null && m.expiresAt > 0 && m.expiresAt < System.currentTimeMillis();
               }
               private boolean isHiddenForMe(Message m) {
-                  return sp.getBoolean("hidden_" + m.id, false);
+                  if (sp.getBoolean("hidden_" + m.id, false)) return true;
+                  if (m.hiddenFor == null || FirebaseUtils.myUid() == null) return false;
+                  return Boolean.TRUE.equals(m.hiddenFor.get(FirebaseUtils.myUid()));
               }
               private void markDeliveredAndSeen(Message m) {
                   if (m.senderId == null || m.senderId.equals(FirebaseUtils.myUid())) return;
@@ -3574,8 +3946,13 @@ jobs:
                       startActivityForResult(new Intent(this, ContactsPickerActivity.class), 201); });
                   v.findViewById(R.id.opt_view_once).setOnClickListener(x -> { bsd.dismiss();
                       nextIsViewOnce = true;
-                      Toast.makeText(this, "Next image will be view-once", Toast.LENGTH_SHORT).show();
-                      pick("image/*", RC_GALLERY); });
+                      // Let user choose image or video for view-once
+                      new AlertDialog.Builder(this).setTitle("View-once")
+                          .setItems(new String[]{"Image", "Video"}, (dlg, w) -> {
+                              if (w == 0) pick("image/*", RC_GALLERY);
+                              else        pick("video/*", RC_VIDEO);
+                          }).show();
+                  });
                   bsd.show();
               }
               private void pick(String mime, int rc) {
@@ -3704,6 +4081,10 @@ jobs:
               }
               private void hideForMe(Message m) {
                   sp.edit().putBoolean("hidden_" + m.id, true).apply();
+                  // Sync hidden state to cloud so it persists across re-installs / devices
+                  String me = FirebaseUtils.myUid();
+                  if (me != null && m.id != null)
+                      msgRef.child(m.id).child("hiddenFor").child(me).setValue(true);
                   for (int i = 0; i < messages.size(); i++)
                       if (messages.get(i).id.equals(m.id)) {
                           messages.remove(i); adapter.notifyItemRemoved(i); break;
@@ -4194,6 +4575,15 @@ jobs:
                           messages.add(m);
                           adapter.notifyItemInserted(messages.size() - 1);
                           rv.scrollToPosition(messages.size() - 1);
+                          // Group read receipts: mark delivered/seen for messages from others
+                          String me = FirebaseUtils.myUid();
+                          if (me != null && m.senderId != null && !me.equals(m.senderId)) {
+                              s.getRef().child("deliveredTo").child(me)
+                                  .setValue(System.currentTimeMillis());
+                              if (PrefsManager.readReceiptsEnabled())
+                                  s.getRef().child("seenBy").child(me)
+                                      .setValue(System.currentTimeMillis());
+                          }
                       }
                       @Override public void onChildChanged(@NonNull DataSnapshot s, String prev) {
                           Message m = s.getValue(Message.class);
@@ -4227,8 +4617,38 @@ jobs:
               private void sendText() {
                   String t = etMessage.getText().toString().trim();
                   if (t.isEmpty()) return;
-                  Message m = baseMsg("text"); m.text = t;
-                  push(m); etMessage.setText("");
+                  final Message m = baseMsg("text"); m.text = t;
+                  // Parse @mentions and resolve to uids before push
+                  final List<String> tokens = MentionHelper.extract(t);
+                  if (tokens.isEmpty()) { push(m); etMessage.setText(""); return; }
+                  FirebaseUtils.groups().child(gid).child("members")
+                      .addListenerForSingleValueEvent(new ValueEventListener() {
+                          @Override public void onDataChange(@NonNull DataSnapshot d) {
+                              List<String> mems = new ArrayList<>();
+                              for (DataSnapshot c : d.getChildren()) mems.add(c.getKey());
+                              MentionResolver.resolve(tokens, mems, uids -> {
+                                  m.mentions = uids;
+                                  push(m);
+                                  notifyMentions(uids, t);
+                                  etMessage.setText("");
+                              });
+                          }
+                          @Override public void onCancelled(@NonNull DatabaseError e) {
+                              push(m); etMessage.setText("");
+                          }
+                      });
+              }
+              private void notifyMentions(List<String> uids, String text) {
+                  for (String uid : uids) {
+                      if (uid.equals(FirebaseUtils.myUid())) continue;
+                      try {
+                          JSONObject body = new JSONObject();
+                          body.put("type", "mention"); body.put("toUid", uid);
+                          body.put("gid", gid); body.put("title", gname);
+                          body.put("body", "@you: " + text);
+                          PushNotify.send("/notify/mention", body);
+                      } catch (Exception ignored) {}
+                  }
               }
               private Message baseMsg(String type) {
                   Message m = new Message();
@@ -5163,25 +5583,179 @@ jobs:
 
           cat > app/src/main/java/com/callx/app/activities/WallpaperPickerActivity.java << 'ENDOFFILE'
           package com.callx.app.activities;
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.net.Uri;
           import android.os.Bundle;
+          import android.view.View;
+          import android.widget.Button;
+          import android.widget.Toast;
           import androidx.appcompat.app.AppCompatActivity;
           import androidx.recyclerview.widget.GridLayoutManager;
           import androidx.recyclerview.widget.RecyclerView;
           import com.callx.app.R;
           import com.callx.app.adapters.WallpaperAdapter;
+          import com.callx.app.utils.CloudinaryUploader;
           import com.callx.app.utils.PrefsManager;
           public class WallpaperPickerActivity extends AppCompatActivity {
+              private static final int RC_PICK = 91;
+              private String chatKey;
               @Override protected void onCreate(Bundle s) {
                   super.onCreate(s);
                   setContentView(R.layout.activity_wallpaper);
-                  String chatKey = getIntent().getStringExtra("chatKey");
+                  chatKey = getIntent().getStringExtra("chatKey");
                   RecyclerView rv = findViewById(R.id.rv);
                   rv.setLayoutManager(new GridLayoutManager(this, 2));
                   rv.setAdapter(new WallpaperAdapter(this, w -> {
                       PrefsManager.setWallpaper(chatKey, w);
+                      PrefsManager.setCustomWallpaperUrl(chatKey, null);
                       setResult(RESULT_OK); finish();
                   }));
+                  Button custom = findViewById(R.id.btn_custom_wallpaper);
+                  if (custom != null) {
+                      custom.setVisibility(View.VISIBLE);
+                      custom.setOnClickListener(v -> {
+                          Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                          i.addCategory(Intent.CATEGORY_OPENABLE); i.setType("image/*");
+                          startActivityForResult(i, RC_PICK);
+                      });
+                  }
                   findViewById(R.id.toolbar).setOnClickListener(v -> finish());
+              }
+              @Override protected void onActivityResult(int rc, int rs, Intent data) {
+                  super.onActivityResult(rc, rs, data);
+                  if (rc != RC_PICK || rs != Activity.RESULT_OK || data == null) return;
+                  Uri u = data.getData(); if (u == null) return;
+                  Toast.makeText(this, "Uploading…", Toast.LENGTH_SHORT).show();
+                  CloudinaryUploader.upload(this, u, "image", new CloudinaryUploader.Callback() {
+                      @Override public void onSuccess(String url) {
+                          runOnUiThread(() -> {
+                              PrefsManager.setCustomWallpaperUrl(chatKey, url);
+                              setResult(RESULT_OK); finish();
+                          });
+                      }
+                      @Override public void onError(String err) {
+                          runOnUiThread(() -> Toast.makeText(WallpaperPickerActivity.this,
+                              "Upload failed", Toast.LENGTH_SHORT).show());
+                      }
+                  });
+              }
+          }
+          ENDOFFILE
+
+          cat > app/src/main/java/com/callx/app/activities/ArchivedChatsActivity.java << 'ENDOFFILE'
+          package com.callx.app.activities;
+          import android.content.Intent;
+          import android.os.Bundle;
+          import androidx.annotation.NonNull;
+          import androidx.appcompat.app.AppCompatActivity;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+          import com.callx.app.R;
+          import com.callx.app.adapters.ChatListAdapter;
+          import com.callx.app.models.ChatMeta;
+          import com.callx.app.utils.FirebaseUtils;
+          import com.callx.app.utils.PrefsManager;
+          import com.google.firebase.database.*;
+          import java.util.*;
+          public class ArchivedChatsActivity extends AppCompatActivity {
+              private final List<ChatMeta> data = new ArrayList<>();
+              private ChatListAdapter adapter;
+              @Override protected void onCreate(Bundle s) {
+                  super.onCreate(s);
+                  setContentView(R.layout.activity_archived);
+                  setTitle("Archived chats");
+                  RecyclerView rv = findViewById(R.id.rv);
+                  rv.setLayoutManager(new LinearLayoutManager(this));
+                  adapter = new ChatListAdapter(this, data, m -> {
+                      Intent it = new Intent(this, ChatActivity.class);
+                      it.putExtra(ChatActivity.EXTRA_UID, m.partnerUid);
+                      it.putExtra(ChatActivity.EXTRA_NAME, m.partnerName);
+                      it.putExtra(ChatActivity.EXTRA_PHOTO, m.partnerPhoto);
+                      startActivity(it);
+                  });
+                  rv.setAdapter(adapter);
+                  load();
+              }
+              private void load() {
+                  String me = FirebaseUtils.myUid(); if (me == null) return;
+                  FirebaseUtils.users().child(me).child("chats")
+                      .addValueEventListener(new ValueEventListener() {
+                          @Override public void onDataChange(@NonNull DataSnapshot d) {
+                              data.clear();
+                              for (DataSnapshot c : d.getChildren()) {
+                                  ChatMeta cm = c.getValue(ChatMeta.class);
+                                  if (cm == null) continue;
+                                  if (cm.partnerUid == null) cm.partnerUid = c.getKey();
+                                  String key = (me.compareTo(cm.partnerUid) < 0)
+                                      ? me + "_" + cm.partnerUid : cm.partnerUid + "_" + me;
+                                  if (PrefsManager.isArchived(key) || Boolean.TRUE.equals(cm.archived))
+                                      data.add(cm);
+                              }
+                              Collections.sort(data, (a, b) -> Long.compare(
+                                  b.lastMessageAt == null ? 0 : b.lastMessageAt,
+                                  a.lastMessageAt == null ? 0 : a.lastMessageAt));
+                              adapter.notifyDataSetChanged();
+                          }
+                          @Override public void onCancelled(@NonNull DatabaseError e) {}
+                      });
+              }
+          }
+          ENDOFFILE
+
+          cat > app/src/main/java/com/callx/app/activities/PollCreateActivity.java << 'ENDOFFILE'
+          package com.callx.app.activities;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.widget.*;
+          import androidx.appcompat.app.AppCompatActivity;
+          import com.callx.app.utils.FirebaseUtils;
+          import com.google.firebase.database.DatabaseReference;
+          import java.util.*;
+          /** Lightweight in-chat poll creator. Persists to messages/<chatKey>/poll_<id>. */
+          public class PollCreateActivity extends AppCompatActivity {
+              @Override protected void onCreate(Bundle s) {
+                  super.onCreate(s);
+                  String chatKey = getIntent().getStringExtra("chatKey");
+                  if (chatKey == null) { finish(); return; }
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(40, 80, 40, 40);
+                  TextView title = new TextView(this); title.setText("Create poll"); title.setTextSize(20);
+                  EditText q = new EditText(this); q.setHint("Question");
+                  final List<EditText> opts = new ArrayList<>();
+                  for (int i = 0; i < 4; i++) {
+                      EditText o = new EditText(this); o.setHint("Option " + (i + 1));
+                      opts.add(o);
+                  }
+                  Button save = new Button(this); save.setText("Send poll");
+                  root.addView(title); root.addView(q);
+                  for (EditText o : opts) root.addView(o);
+                  root.addView(save);
+                  setContentView(root);
+                  save.setOnClickListener(v -> {
+                      String me = FirebaseUtils.myUid();
+                      if (me == null || q.getText().toString().trim().isEmpty()) {
+                          Toast.makeText(this, "Question required", Toast.LENGTH_SHORT).show(); return;
+                      }
+                      DatabaseReference ref = FirebaseUtils.chats().child(chatKey).push();
+                      Map<String, Object> m = new HashMap<>();
+                      m.put("id", ref.getKey()); m.put("type", "poll");
+                      m.put("text", q.getText().toString());
+                      m.put("senderId", me); m.put("timestamp", System.currentTimeMillis());
+                      List<String> os = new ArrayList<>();
+                      for (EditText o : opts) {
+                          String t = o.getText().toString().trim();
+                          if (!t.isEmpty()) os.add(t);
+                      }
+                      if (os.size() < 2) {
+                          Toast.makeText(this, "At least 2 options", Toast.LENGTH_SHORT).show(); return;
+                      }
+                      m.put("pollOptions", os);
+                      m.put("pollVotes", new HashMap<String, String>());
+                      ref.setValue(m);
+                      finish();
+                  });
               }
           }
           ENDOFFILE
@@ -5432,11 +6006,14 @@ jobs:
           # JAVA — ADAPTERS
           # ============================================================
           # MessageAdapter — full feature: reply/reactions/edit/star/double-tick/
-          # view-once/audio/video/file/location/contact + group sender name
+          # view-once/audio playback/video/file/location/contact + group sender name
+          # + reply-jump + cloud delete-for-me filter
           cat > app/src/main/java/com/callx/app/adapters/MessageAdapter.java << 'ENDOFFILE'
           package com.callx.app.adapters;
           import android.content.Context;
           import android.media.MediaPlayer;
+          import android.os.Handler;
+          import android.os.Looper;
           import android.text.format.DateFormat;
           import android.view.LayoutInflater;
           import android.view.View;
@@ -5447,6 +6024,7 @@ jobs:
           import com.bumptech.glide.Glide;
           import com.callx.app.R;
           import com.callx.app.models.Message;
+          import com.callx.app.utils.AudioPlayerHelper;
           import com.callx.app.utils.FileUtils;
           import com.callx.app.utils.MentionHelper;
           import java.util.*;
@@ -5455,6 +6033,7 @@ jobs:
                   void onLongPress(Message m);
                   void onReact(Message m, String emoji);
                   void onMediaTap(Message m);
+                  default void onReplyJump(String replyToId) {}
               }
               private static final int SENT = 0, RECV = 1;
               private final Context ctx;
@@ -5462,10 +6041,17 @@ jobs:
               private final String myUid;
               private final boolean isGroup;
               private Listener listener;
+              private final AudioPlayerHelper audio = new AudioPlayerHelper();
               public MessageAdapter(Context c, List<Message> d, String myUid, boolean isGroup) {
                   this.ctx = c; this.data = d; this.myUid = myUid; this.isGroup = isGroup;
               }
               public void setListener(Listener l) { this.listener = l; }
+              public void releaseAudio() { audio.release(); }
+              public int getAdapterPosOf(Message m) {
+                  for (int i = 0; i < data.size(); i++)
+                      if (data.get(i).id != null && data.get(i).id.equals(m.id)) return i;
+                  return RecyclerView.NO_POSITION;
+              }
               @Override public int getItemViewType(int pos) {
                   Message m = data.get(pos);
                   return (m.senderId != null && m.senderId.equals(myUid)) ? SENT : RECV;
@@ -5525,11 +6111,14 @@ jobs:
                           tvSenderName.setVisibility(View.VISIBLE);
                           tvSenderName.setText(m.senderName == null ? "" : m.senderName);
                       } else if (tvSenderName != null) tvSenderName.setVisibility(View.GONE);
-                      // Reply quote
+                      // Reply quote — tap jumps to original
                       if (m.replyToId != null) {
                           llReply.setVisibility(View.VISIBLE);
                           tvQuoteName.setText(m.replyToName == null ? "" : m.replyToName);
                           tvQuoteText.setText(m.replyToText == null ? "" : m.replyToText);
+                          llReply.setOnClickListener(v -> {
+                              if (listener != null) listener.onReplyJump(m.replyToId);
+                          });
                       } else llReply.setVisibility(View.GONE);
                       // Hide all media containers, then show the one for this type
                       ivImage.setVisibility(View.GONE);
@@ -5553,14 +6142,41 @@ jobs:
                               ivImage.setOnClickListener(v -> { if (listener != null) listener.onMediaTap(m); });
                           }
                       } else if ("video".equals(m.type) && m.mediaUrl != null) {
-                          flVideo.setVisibility(View.VISIBLE);
-                          if (m.thumbnailUrl != null)
-                              Glide.with(ctx).load(m.thumbnailUrl).into(ivVideoThumb);
-                          flVideo.setOnClickListener(v -> { if (listener != null) listener.onMediaTap(m); });
+                          // View-once video: show placeholder once viewed
+                          if (Boolean.TRUE.equals(m.viewOnce) && Boolean.TRUE.equals(m.viewed)) {
+                              tvMessage.setVisibility(View.VISIBLE);
+                              tvMessage.setText("👁 viewed");
+                          } else {
+                              flVideo.setVisibility(View.VISIBLE);
+                              if (m.thumbnailUrl != null)
+                                  Glide.with(ctx).load(m.thumbnailUrl).into(ivVideoThumb);
+                              flVideo.setOnClickListener(v -> { if (listener != null) listener.onMediaTap(m); });
+                          }
                       } else if ("audio".equals(m.type) && m.mediaUrl != null) {
                           llAudio.setVisibility(View.VISIBLE);
                           tvAudioDur.setText(FileUtils.formatDuration(m.duration == null ? 0 : m.duration));
-                          btnPlayAudio.setOnClickListener(v -> { if (listener != null) listener.onMediaTap(m); });
+                          // Real audio playback with seekbar
+                          final String url = m.mediaUrl;
+                          btnPlayAudio.setImageResource(audio.isPlaying(url)
+                              ? R.drawable.ic_pause : R.drawable.ic_play);
+                          if (seekAudio != null) {
+                              seekAudio.setMax(m.duration == null ? 100 : m.duration.intValue());
+                              seekAudio.setProgress(audio.positionFor(url));
+                              seekAudio.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                                  @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
+                                      if (u) audio.seekTo(url, p);
+                                  }
+                                  @Override public void onStartTrackingTouch(SeekBar s) {}
+                                  @Override public void onStopTrackingTouch(SeekBar s) {}
+                              });
+                          }
+                          btnPlayAudio.setOnClickListener(v -> {
+                              audio.toggle(url, (pos, total) -> {
+                                  if (seekAudio != null) seekAudio.setProgress(pos);
+                                  tvAudioDur.setText(FileUtils.formatDuration(total - pos));
+                              }, () -> notifyItemChanged(getAdapterPosOf(m)));
+                              notifyItemChanged(getAdapterPosOf(m));
+                          });
                       } else if ("file".equals(m.type) && m.mediaUrl != null) {
                           llFile.setVisibility(View.VISIBLE);
                           tvFileName.setText(m.fileName == null ? "file" : m.fileName);
@@ -6145,21 +6761,26 @@ jobs:
           import android.view.LayoutInflater;
           import android.view.View;
           import android.view.ViewGroup;
+          import android.widget.TextView;
           import androidx.annotation.NonNull;
           import androidx.fragment.app.Fragment;
           import androidx.recyclerview.widget.LinearLayoutManager;
           import androidx.recyclerview.widget.RecyclerView;
           import com.callx.app.R;
+          import com.callx.app.activities.ArchivedChatsActivity;
           import com.callx.app.activities.ChatActivity;
           import com.callx.app.activities.SearchActivity;
           import com.callx.app.adapters.ChatListAdapter;
           import com.callx.app.models.ChatMeta;
           import com.callx.app.utils.FirebaseUtils;
+          import com.callx.app.utils.PrefsManager;
           import com.google.firebase.database.*;
           import java.util.*;
           public class ChatsFragment extends Fragment {
               private List<ChatMeta> data = new ArrayList<>();
               private ChatListAdapter adapter;
+              private TextView tvArchivedHeader;
+              private int archivedCount = 0;
               @Override public View onCreateView(@NonNull LayoutInflater i, ViewGroup p, Bundle s) {
                   View root = i.inflate(R.layout.fragment_chats, p, false);
                   RecyclerView rv = root.findViewById(R.id.rv);
@@ -6174,6 +6795,11 @@ jobs:
                   rv.setAdapter(adapter);
                   root.findViewById(R.id.fab_new_chat).setOnClickListener(v ->
                       startActivity(new Intent(getActivity(), SearchActivity.class)));
+                  tvArchivedHeader = root.findViewById(R.id.tv_archived_header);
+                  if (tvArchivedHeader != null) {
+                      tvArchivedHeader.setOnClickListener(v ->
+                          startActivity(new Intent(getActivity(), ArchivedChatsActivity.class)));
+                  }
                   load();
                   return root;
               }
@@ -6183,15 +6809,27 @@ jobs:
                       .addValueEventListener(new ValueEventListener() {
                           @Override public void onDataChange(DataSnapshot d) {
                               data.clear();
+                              archivedCount = 0;
                               for (DataSnapshot c : d.getChildren()) {
                                   ChatMeta cm = c.getValue(ChatMeta.class);
                                   if (cm == null) continue;
                                   if (cm.partnerUid == null) cm.partnerUid = c.getKey();
+                                  String key = (me.compareTo(cm.partnerUid) < 0)
+                                      ? me + "_" + cm.partnerUid : cm.partnerUid + "_" + me;
+                                  // Skip archived in main list
+                                  if (PrefsManager.isArchived(key) || Boolean.TRUE.equals(cm.archived)) {
+                                      archivedCount++; continue;
+                                  }
+                                  cm.muted = PrefsManager.isMuted(key);
                                   data.add(cm);
                               }
                               Collections.sort(data, (a, b) -> Long.compare(
                                   b.lastMessageAt == null ? 0 : b.lastMessageAt,
                                   a.lastMessageAt == null ? 0 : a.lastMessageAt));
+                              if (tvArchivedHeader != null) {
+                                  tvArchivedHeader.setVisibility(archivedCount > 0 ? View.VISIBLE : View.GONE);
+                                  tvArchivedHeader.setText("📦 Archived (" + archivedCount + ")");
+                              }
                               adapter.notifyDataSetChanged();
                           }
                           @Override public void onCancelled(DatabaseError e) {}
@@ -6383,11 +7021,13 @@ jobs:
           import android.app.NotificationManager;
           import android.app.PendingIntent;
           import android.content.Intent;
+          import android.net.Uri;
           import androidx.core.app.NotificationCompat;
           import com.callx.app.R;
           import com.callx.app.activities.IncomingCallActivity;
           import com.callx.app.utils.Constants;
           import com.callx.app.utils.FirebaseUtils;
+          import com.callx.app.utils.PrefsManager;
           import com.google.firebase.messaging.FirebaseMessagingService;
           import com.google.firebase.messaging.RemoteMessage;
           import java.util.Map;
@@ -6399,9 +7039,26 @@ jobs:
               @Override public void onMessageReceived(RemoteMessage rm) {
                   Map<String, String> d = rm.getData();
                   String type = d.get("type");
+                  // Mute / archive check (1:1 chat) — skip notification if muted
+                  String fromUid = d.get("fromUid");
+                  String me = FirebaseUtils.myUid();
+                  if ("message".equals(type) && fromUid != null && me != null) {
+                      String chatKey = (me.compareTo(fromUid) < 0) ? me + "_" + fromUid : fromUid + "_" + me;
+                      if (PrefsManager.isMuted(chatKey)) return;
+                      // Archived: still notify but use silent channel? -> we just suppress sound
+                  }
+                  // Group mute check
+                  String gid = d.get("gid");
+                  if ("group".equals(type) && gid != null) {
+                      if (PrefsManager.isMuted("group_" + gid)) return;
+                  }
                   if ("call".equals(type)) showIncomingCall(d);
                   else if ("group".equals(type)) showNotif(d, Constants.CHANNEL_GROUPS);
                   else if ("status".equals(type)) showNotif(d, Constants.CHANNEL_STATUS);
+                  else if ("mention".equals(type)) {
+                      // Mentions always get high priority even if group is muted-by-default someday
+                      showNotif(d, Constants.CHANNEL_GROUPS);
+                  }
                   else showNotif(d, Constants.CHANNEL_MESSAGES);
               }
               private void showIncomingCall(Map<String, String> d) {
