@@ -32,6 +32,9 @@ jobs:
         with:
           cache-read-only: false
 
+      - name: Install ImageMagick (for launcher icons)
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
       - name: Create Full Project Structure
         env:
           RUN_NUM: ${{ github.run_number }}
@@ -81,6 +84,11 @@ jobs:
           mkdir -p app/src/main/res/xml
           mkdir -p app/src/main/res/raw
           mkdir -p app/src/main/res/mipmap-anydpi-v26
+          mkdir -p app/src/main/res/mipmap-mdpi
+          mkdir -p app/src/main/res/mipmap-hdpi
+          mkdir -p app/src/main/res/mipmap-xhdpi
+          mkdir -p app/src/main/res/mipmap-xxhdpi
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
 
           # ============================================================
           # google-services.json
@@ -165,7 +173,7 @@ jobs:
               defaultConfig {
                   applicationId "com.callx.app"
                   minSdk 23
-                  targetSdk 33
+                  targetSdk 34
                   versionCode __VERSION_CODE__
                   versionName "__VERSION_NAME__"
                   vectorDrawables.useSupportLibrary = true
@@ -261,8 +269,6 @@ jobs:
               <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
@@ -367,7 +373,8 @@ jobs:
                       android:foregroundServiceType="phoneCall|microphone|camera"/>
                   <service
                       android:name=".services.PresenceService"
-                      android:exported="false"/>
+                      android:exported="false"
+                      android:foregroundServiceType="dataSync"/>
                   <service
                       android:name=".services.LocationShareService"
                       android:exported="false"
@@ -613,7 +620,7 @@ jobs:
                    ic_attach ic_gallery ic_video ic_audio ic_file ic_phone \
                    ic_video_call ic_phone_off ic_group ic_status_add ic_person \
                    ic_search ic_play ic_pause ic_call_notification ic_message_notification \
-                   ic_status_notification ic_logout ic_pdf ic_launcher_fg \
+                   ic_status_notification ic_logout ic_pdf \
                    ic_reply ic_forward ic_delete ic_edit ic_star ic_star_filled \
                    ic_block ic_mute ic_archive ic_unarchive ic_speaker ic_speaker_off \
                    ic_camera_switch ic_mic_off ic_video_off ic_close ic_check ic_check_double \
@@ -630,6 +637,20 @@ jobs:
           ENDOFFILE
           done
 
+          # Distinctive launcher foreground (phone-in-circle "C" mark for CallX).
+          # Sized 108x108 with ~66 viewport for safe-zone in adaptive icons.
+          cat > app/src/main/res/drawable/ic_launcher_fg.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#FFFFFFFF"
+                  android:pathData="M71.2,72.6c-1.5,1.5 -3.6,2.3 -5.7,2.1 -8.6,-0.7 -16.7,-4.4 -22.8,-10.5 -6.1,-6.1 -9.8,-14.2 -10.5,-22.8 -0.2,-2.1 0.6,-4.2 2.1,-5.7l4.4,-4.4c1.7,-1.7 4.4,-1.7 6.1,0l6.5,6.5c1.7,1.7 1.7,4.4 0,6.1l-2.7,2.7c1.6,4 4,7.6 7.1,10.7 3.1,3.1 6.7,5.5 10.7,7.1l2.7,-2.7c1.7,-1.7 4.4,-1.7 6.1,0l6.5,6.5c1.7,1.7 1.7,4.4 0,6.1z"/>
+              <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.25"
+                  android:pathData="M54,18 m-30,0 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0"/>
+          </vector>
+          ENDOFFILE
+
           cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'ENDOFFILE'
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
@@ -645,6 +666,36 @@ jobs:
               <foreground android:drawable="@drawable/ic_launcher_fg"/>
           </adaptive-icon>
           ENDOFFILE
+
+          # ============================================================
+          # Generate REAL PNG launcher icons for every density.
+          # This is what fixes the "white icon" issue on Android 6/7
+          # and on launchers that don't render adaptive icons (MIUI, Realme, etc.)
+          # ============================================================
+          generate_launcher_png() {
+            local size=$1
+            local outdir=$2
+            mkdir -p "$outdir"
+            # Square icon: blue rounded background + white phone glyph centered
+            convert -size ${size}x${size} xc:none \
+              \( -size ${size}x${size} xc:none -fill "#0A7CFF" \
+                 -draw "roundrectangle 0,0 $((size-1)),$((size-1)) $((size/6)),$((size/6))" \) \
+              -composite \
+              -fill white -font DejaVu-Sans-Bold -gravity center \
+              -pointsize $((size*55/100)) -annotate +0+0 "C" \
+              "$outdir/ic_launcher.png"
+            # Round icon: blue circle background + same white "C"
+            convert -size ${size}x${size} xc:none \
+              -fill "#0A7CFF" -draw "circle $((size/2)),$((size/2)) $((size/2)),0" \
+              -fill white -font DejaVu-Sans-Bold -gravity center \
+              -pointsize $((size*55/100)) -annotate +0+0 "C" \
+              "$outdir/ic_launcher_round.png"
+          }
+          generate_launcher_png 48  app/src/main/res/mipmap-mdpi
+          generate_launcher_png 72  app/src/main/res/mipmap-hdpi
+          generate_launcher_png 96  app/src/main/res/mipmap-xhdpi
+          generate_launcher_png 144 app/src/main/res/mipmap-xxhdpi
+          generate_launcher_png 192 app/src/main/res/mipmap-xxxhdpi
 
           # Default chat wallpapers (3 simple patterns)
           for w in 1 2 3; do
@@ -2447,25 +2498,34 @@ jobs:
               @Override
               public void onCreate() {
                   super.onCreate();
-                  createChannels();
-                  PrefsManager.init(this);
-                  // Schedule periodic cleanup of expired (disappearing) messages
-                  com.callx.app.utils.DisappearWorker.schedule(this);
-                  // Generate this device's E2E key (no-op if exists)
-                  com.callx.app.utils.KeyExchangeHelper.ensureMyKey(null);
-                  ProcessLifecycleOwner.get().getLifecycle()
-                      .addObserver(new DefaultLifecycleObserver() {
-                          @Override public void onStop(LifecycleOwner o) {
-                              lastBackgroundedAt = System.currentTimeMillis();
-                          }
-                          @Override public void onStart(LifecycleOwner o) {
-                              if (PrefsManager.isAppLockEnabled()
-                                  && lastBackgroundedAt > 0
-                                  && System.currentTimeMillis() - lastBackgroundedAt > 30_000L) {
-                                  isLocked = true;
+                  // Initialize prefs FIRST so any later code that touches them is safe.
+                  try { PrefsManager.init(this); } catch (Throwable ignored) {}
+                  try { createChannels(); } catch (Throwable ignored) {}
+                  // Schedule periodic cleanup of expired (disappearing) messages.
+                  // Wrapped: WorkManager init failures must NOT crash app launch.
+                  try {
+                      com.callx.app.utils.DisappearWorker.schedule(this);
+                  } catch (Throwable ignored) {}
+                  // Generate this device's E2E key (no-op if exists).
+                  // Wrapped: Firebase/network failures must NOT crash app launch.
+                  try {
+                      com.callx.app.utils.KeyExchangeHelper.ensureMyKey(null);
+                  } catch (Throwable ignored) {}
+                  try {
+                      ProcessLifecycleOwner.get().getLifecycle()
+                          .addObserver(new DefaultLifecycleObserver() {
+                              @Override public void onStop(LifecycleOwner o) {
+                                  lastBackgroundedAt = System.currentTimeMillis();
                               }
-                          }
-                      });
+                              @Override public void onStart(LifecycleOwner o) {
+                                  if (PrefsManager.isAppLockEnabled()
+                                      && lastBackgroundedAt > 0
+                                      && System.currentTimeMillis() - lastBackgroundedAt > 30_000L) {
+                                      isLocked = true;
+                                  }
+                              }
+                          });
+                  } catch (Throwable ignored) {}
               }
               private void createChannels() {
                   if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
