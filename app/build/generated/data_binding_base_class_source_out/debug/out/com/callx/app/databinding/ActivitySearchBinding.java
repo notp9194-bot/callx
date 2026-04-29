@@ -25,10 +25,16 @@ public final class ActivitySearchBinding implements ViewBinding {
   private final LinearLayout rootView;
 
   @NonNull
+  public final MaterialButton btnAudioCall;
+
+  @NonNull
+  public final MaterialButton btnOpenChat;
+
+  @NonNull
   public final MaterialButton btnSearch;
 
   @NonNull
-  public final MaterialButton btnSendRequest;
+  public final MaterialButton btnVideoCall;
 
   @NonNull
   public final TextInputEditText etSearchId;
@@ -51,14 +57,17 @@ public final class ActivitySearchBinding implements ViewBinding {
   @NonNull
   public final TextView tvStatus;
 
-  private ActivitySearchBinding(@NonNull LinearLayout rootView, @NonNull MaterialButton btnSearch,
-      @NonNull MaterialButton btnSendRequest, @NonNull TextInputEditText etSearchId,
-      @NonNull CircleImageView ivResultAvatar, @NonNull CardView llResult,
-      @NonNull MaterialToolbar toolbar, @NonNull TextView tvResultId,
+  private ActivitySearchBinding(@NonNull LinearLayout rootView,
+      @NonNull MaterialButton btnAudioCall, @NonNull MaterialButton btnOpenChat,
+      @NonNull MaterialButton btnSearch, @NonNull MaterialButton btnVideoCall,
+      @NonNull TextInputEditText etSearchId, @NonNull CircleImageView ivResultAvatar,
+      @NonNull CardView llResult, @NonNull MaterialToolbar toolbar, @NonNull TextView tvResultId,
       @NonNull TextView tvResultName, @NonNull TextView tvStatus) {
     this.rootView = rootView;
+    this.btnAudioCall = btnAudioCall;
+    this.btnOpenChat = btnOpenChat;
     this.btnSearch = btnSearch;
-    this.btnSendRequest = btnSendRequest;
+    this.btnVideoCall = btnVideoCall;
     this.etSearchId = etSearchId;
     this.ivResultAvatar = ivResultAvatar;
     this.llResult = llResult;
@@ -95,15 +104,27 @@ public final class ActivitySearchBinding implements ViewBinding {
     // This is done to optimize the compiled bytecode for size and performance.
     int id;
     missingId: {
+      id = R.id.btn_audio_call;
+      MaterialButton btnAudioCall = ViewBindings.findChildViewById(rootView, id);
+      if (btnAudioCall == null) {
+        break missingId;
+      }
+
+      id = R.id.btn_open_chat;
+      MaterialButton btnOpenChat = ViewBindings.findChildViewById(rootView, id);
+      if (btnOpenChat == null) {
+        break missingId;
+      }
+
       id = R.id.btn_search;
       MaterialButton btnSearch = ViewBindings.findChildViewById(rootView, id);
       if (btnSearch == null) {
         break missingId;
       }
 
-      id = R.id.btn_send_request;
-      MaterialButton btnSendRequest = ViewBindings.findChildViewById(rootView, id);
-      if (btnSendRequest == null) {
+      id = R.id.btn_video_call;
+      MaterialButton btnVideoCall = ViewBindings.findChildViewById(rootView, id);
+      if (btnVideoCall == null) {
         break missingId;
       }
 
@@ -149,8 +170,9 @@ public final class ActivitySearchBinding implements ViewBinding {
         break missingId;
       }
 
-      return new ActivitySearchBinding((LinearLayout) rootView, btnSearch, btnSendRequest,
-          etSearchId, ivResultAvatar, llResult, toolbar, tvResultId, tvResultName, tvStatus);
+      return new ActivitySearchBinding((LinearLayout) rootView, btnAudioCall, btnOpenChat,
+          btnSearch, btnVideoCall, etSearchId, ivResultAvatar, llResult, toolbar, tvResultId,
+          tvResultName, tvStatus);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

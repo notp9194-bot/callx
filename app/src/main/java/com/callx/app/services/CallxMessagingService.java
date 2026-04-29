@@ -31,7 +31,7 @@ public class CallxMessagingService extends FirebaseMessagingService {
         } else if ("status".equals(type)) {
             showStatus(data);
         } else if ("request".equals(type)) {
-            showRequest(data);
+            // Request system hata diya gaya hai — kuch mat karo
         } else {
             showMessage(data);
         }
