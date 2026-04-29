@@ -1,5 +1,6 @@
 package com.callx.app.activities;
 import android.Manifest;
+import android.app.NotificationManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -37,6 +38,28 @@ public class MainActivity extends AppCompatActivity {
                     != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.POST_NOTIFICATIONS}, 101);
+            }
+        }
+        // Overlay permission — background se popup launch karne ke liye Android 10+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && !android.provider.Settings.canDrawOverlays(this)) {
+            try {
+                startActivity(new Intent(
+                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    android.net.Uri.parse("package:" + getPackageName())));
+            } catch (Exception ignored) {}
+        }
+        // Full-screen intent permission — Android 14+
+        if (Build.VERSION.SDK_INT >= 34) {
+            NotificationManager nm = (NotificationManager)
+                getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null && !nm.canUseFullScreenIntent()) {
+                try {
+                    startActivity(new Intent(
+                        android.provider.Settings
+                            .ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                        android.net.Uri.parse("package:" + getPackageName())));
+                } catch (Exception ignored) {}
             }
         }
         setSupportActionBar(binding.toolbar);
@@ -78,32 +101,7 @@ public class MainActivity extends AppCompatActivity {
         });
         loadMyId();
         refreshFcmToken();
-        listenForNewRequests();
-    }
-    private long requestsBaselineTs = System.currentTimeMillis();
-    private void listenForNewRequests() {
-        String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
-        com.callx.app.utils.FirebaseUtils.getRequestsRef(uid)
-            .addChildEventListener(new com.google.firebase.database.ChildEventListener() {
-                @Override public void onChildAdded(DataSnapshot s, String prev) {
-                    Long at = s.child("at").getValue(Long.class);
-                    if (at == null || at < requestsBaselineTs) return; // sirf naye
-                    String fromUid  = s.child("fromUid").getValue(String.class);
-                    String fromName = s.child("fromName").getValue(String.class);
-                    if (fromName == null) fromName = s.child("name").getValue(String.class);
-                    if (fromUid == null)  fromUid  = s.getKey();
-                    if (fromName == null) fromName = "Friend";
-                    Intent i = new Intent(MainActivity.this,
-                        com.callx.app.activities.RequestPopupActivity.class);
-                    i.putExtra("fromUid", fromUid);
-                    i.putExtra("fromName", fromName);
-                    startActivity(i);
-                }
-                @Override public void onChildChanged(DataSnapshot s, String p) {}
-                @Override public void onChildRemoved(DataSnapshot s) {}
-                @Override public void onChildMoved(DataSnapshot s, String p) {}
-                @Override public void onCancelled(DatabaseError e) {}
-            });
+        // Global request listener ab CallxApp me hai — har activity me kaam karta hai
     }
     private void updateFab(int position) {
         switch (position) {
