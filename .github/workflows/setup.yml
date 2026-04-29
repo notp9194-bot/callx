@@ -25,6 +25,8 @@ jobs:
           mkdir -p app/src/main/java/com/callx/app/adapters
           mkdir -p app/src/main/java/com/callx/app/models
           mkdir -p app/src/main/java/com/callx/app/utils
+          mkdir -p app/src/main/java/com/callx/app/services
+          mkdir -p server
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/res/values
@@ -163,6 +165,7 @@ jobs:
               implementation platform('com.google.firebase:firebase-bom:32.7.0')
               implementation 'com.google.firebase:firebase-auth'
               implementation 'com.google.firebase:firebase-database'
+              implementation 'com.google.firebase:firebase-messaging'
               implementation 'io.getstream:stream-webrtc-android:1.1.2'
           }
           ENDOFFILE
@@ -179,6 +182,12 @@ jobs:
               <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
               <uses-permission android:name="android.permission.VIBRATE"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <uses-permission android:name="android.permission.WAKE_LOCK"/>
+              <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
               <application
                   android:allowBackup="true"
                   android:label="CallX"
@@ -202,6 +211,23 @@ jobs:
                       android:screenOrientation="portrait"
                       android:showWhenLocked="true"
                       android:turnScreenOn="true"/>
+                  <activity android:name=".activities.IncomingCallActivity"
+                      android:exported="false"
+                      android:launchMode="singleInstance"
+                      android:screenOrientation="portrait"
+                      android:excludeFromRecents="true"
+                      android:showWhenLocked="true"
+                      android:turnScreenOn="true"/>
+                  <service
+                      android:name=".services.CallxMessagingService"
+                      android:exported="false">
+                      <intent-filter>
+                          <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+                      </intent-filter>
+                  </service>
+                  <meta-data
+                      android:name="com.google.firebase.messaging.default_notification_channel_id"
+                      android:value="callx_calls"/>
               </application>
           </manifest>
           ENDOFFILE
@@ -899,6 +925,8 @@ jobs:
           import com.google.firebase.auth.FirebaseUser;
           import com.google.firebase.auth.UserProfileChangeRequest;
           import com.google.firebase.database.FirebaseDatabase;
+          import com.google.firebase.messaging.FirebaseMessaging;
+          import com.callx.app.utils.Constants;
           import java.util.HashMap;
           import java.util.Map;
           public class AuthActivity extends AppCompatActivity {
@@ -921,7 +949,7 @@ jobs:
                       }
                       if (isLoginMode) {
                           auth.signInWithEmailAndPassword(email, password)
-                              .addOnSuccessListener(r -> goToMain())
+                              .addOnSuccessListener(r -> { saveFcmToken(); goToMain(); })
                               .addOnFailureListener(e -> showError(e.getMessage()));
                       } else {
                           String name = binding.etName.getText().toString().trim();
@@ -947,6 +975,7 @@ jobs:
                                           Toast.makeText(this,
                                               "Account bana!\nTumhara CallX ID: " + callxId,
                                               Toast.LENGTH_LONG).show();
+                                          saveFcmToken();
                                           goToMain();
                                       });
                               })
@@ -966,6 +995,18 @@ jobs:
                   binding.tvError.setVisibility(View.VISIBLE);
                   binding.tvError.setText(msg);
               }
+              private void saveFcmToken() {
+                  FirebaseUser user = auth.getCurrentUser();
+                  if (user == null) return;
+                  String uid = user.getUid();
+                  FirebaseMessaging.getInstance().getToken()
+                      .addOnSuccessListener(token -> {
+                          if (token == null) return;
+                          FirebaseDatabase.getInstance(Constants.DB_URL)
+                              .getReference("users").child(uid)
+                              .child("fcmToken").setValue(token);
+                      });
+              }
               private void goToMain() {
                   startActivity(new Intent(this, MainActivity.class));
                   finish();
@@ -978,18 +1019,24 @@ jobs:
           # ============================================================
           cat > app/src/main/java/com/callx/app/activities/MainActivity.java << 'ENDOFFILE'
           package com.callx.app.activities;
+          import android.Manifest;
           import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.os.Build;
           import android.os.Bundle;
           import android.view.Menu;
           import android.view.MenuItem;
           import androidx.appcompat.app.AppCompatActivity;
+          import androidx.core.app.ActivityCompat;
           import androidx.viewpager2.widget.ViewPager2;
           import com.callx.app.R;
           import com.callx.app.adapters.ViewPagerAdapter;
           import com.callx.app.databinding.ActivityMainBinding;
+          import com.callx.app.utils.Constants;
           import com.google.android.material.tabs.TabLayoutMediator;
           import com.google.firebase.auth.FirebaseAuth;
           import com.google.firebase.database.*;
+          import com.google.firebase.messaging.FirebaseMessaging;
           public class MainActivity extends AppCompatActivity {
               private ActivityMainBinding binding;
               private final String[] tabs = {"Chats", "Updates", "Calls"};
@@ -1002,6 +1049,14 @@ jobs:
                       startActivity(new Intent(this, AuthActivity.class));
                       finish(); return;
                   }
+                  // Android 13+ notification permission
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                      if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                              != PackageManager.PERMISSION_GRANTED) {
+                          ActivityCompat.requestPermissions(this,
+                              new String[]{Manifest.permission.POST_NOTIFICATIONS}, 101);
+                      }
+                  }
                   setSupportActionBar(binding.toolbar);
                   binding.viewPager.setAdapter(new ViewPagerAdapter(this));
                   new TabLayoutMediator(binding.tabLayout, binding.viewPager,
@@ -1011,13 +1066,21 @@ jobs:
                       startActivity(new Intent(this, SearchActivity.class)));
                   // Apna CallX ID dikhao
                   String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
-                  FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("users").child(uid)
+                  FirebaseDatabase.getInstance(Constants.DB_URL).getReference("users").child(uid)
                       .addListenerForSingleValueEvent(new ValueEventListener() {
                           public void onDataChange(DataSnapshot snap) {
                               String id = snap.child("callxId").getValue(String.class);
                               if (id != null) binding.tvMyId.setText("Mera CallX ID: " + id);
                           }
                           public void onCancelled(DatabaseError e) {}
+                      });
+                  // Refresh FCM token (app launch pe har baar)
+                  FirebaseMessaging.getInstance().getToken()
+                      .addOnSuccessListener(token -> {
+                          if (token == null) return;
+                          FirebaseDatabase.getInstance(Constants.DB_URL)
+                              .getReference("users").child(uid)
+                              .child("fcmToken").setValue(token);
                       });
               }
               @Override
@@ -1043,13 +1106,19 @@ jobs:
           cat > app/src/main/java/com/callx/app/activities/ChatActivity.java << 'ENDOFFILE'
           package com.callx.app.activities;
           import android.os.Bundle;
+          import android.util.Log;
           import androidx.appcompat.app.AppCompatActivity;
           import androidx.recyclerview.widget.LinearLayoutManager;
           import com.callx.app.adapters.MessageAdapter;
           import com.callx.app.databinding.ActivityChatBinding;
           import com.callx.app.models.Message;
+          import com.callx.app.utils.Constants;
           import com.google.firebase.auth.FirebaseAuth;
           import com.google.firebase.database.*;
+          import org.json.JSONObject;
+          import java.io.OutputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
           import java.util.*;
           public class ChatActivity extends AppCompatActivity {
               private ActivityChatBinding binding;
@@ -1100,6 +1169,40 @@ jobs:
                   msg.put("timestamp", ServerValue.TIMESTAMP);
                   messagesRef.push().setValue(msg);
                   binding.etMessage.setText("");
+                  // Receiver ko FCM push (background/killed me bhi notif)
+                  String myName = FirebaseAuth.getInstance().getCurrentUser().getDisplayName();
+                  if (myName == null || myName.isEmpty()) myName = "CallX User";
+                  pushNotify(partnerUid, currentUid, myName, "message", text);
+              }
+              private void pushNotify(String toUid, String fromUid,
+                                      String fromName, String type, String text) {
+                  new Thread(() -> {
+                      HttpURLConnection conn = null;
+                      try {
+                          URL url = new URL(Constants.SERVER_URL + "/notify");
+                          conn = (HttpURLConnection) url.openConnection();
+                          conn.setRequestMethod("POST");
+                          conn.setRequestProperty("Content-Type", "application/json");
+                          conn.setConnectTimeout(8000);
+                          conn.setReadTimeout(8000);
+                          conn.setDoOutput(true);
+                          JSONObject body = new JSONObject();
+                          body.put("toUid", toUid);
+                          body.put("fromUid", fromUid);
+                          body.put("fromName", fromName);
+                          body.put("type", type);
+                          if (text != null) body.put("text", text);
+                          OutputStream os = conn.getOutputStream();
+                          os.write(body.toString().getBytes("UTF-8"));
+                          os.close();
+                          int code = conn.getResponseCode();
+                          Log.d("CallX", "Msg notify: " + code);
+                      } catch (Exception e) {
+                          Log.e("CallX", "Msg notify failed: " + e.getMessage());
+                      } finally {
+                          if (conn != null) conn.disconnect();
+                      }
+                  }).start();
               }
               @Override
               public boolean onSupportNavigateUp() { finish(); return true; }
@@ -1237,12 +1340,18 @@ jobs:
           cat > app/src/main/java/com/callx/app/activities/CallActivity.java << 'ENDOFFILE'
           package com.callx.app.activities;
           import android.os.Bundle;
+          import android.util.Log;
           import android.widget.Toast;
           import androidx.appcompat.app.AppCompatActivity;
           import com.callx.app.databinding.ActivityCallBinding;
+          import com.callx.app.utils.Constants;
           import com.google.firebase.auth.FirebaseAuth;
           import com.google.firebase.database.*;
+          import org.json.JSONObject;
           import org.webrtc.*;
+          import java.io.OutputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
           import java.util.*;
           public class CallActivity extends AppCompatActivity {
               private ActivityCallBinding binding;
@@ -1250,6 +1359,7 @@ jobs:
               private PeerConnection peerConnection;
               private EglBase eglBase;
               private String currentUid, partnerUid, callType;
+              private String partnerName;
               private boolean isCaller;
               private boolean micEnabled = true, cameraEnabled = true;
               @Override
@@ -1261,13 +1371,57 @@ jobs:
                   partnerUid  = getIntent().getStringExtra("partnerUid");
                   callType    = getIntent().getStringExtra("callType");
                   isCaller    = getIntent().getBooleanExtra("isCaller", true);
-                  String partnerName = getIntent().getStringExtra("partnerName");
+                  partnerName = getIntent().getStringExtra("partnerName");
                   binding.tvCallerName.setText(partnerName != null ? partnerName : "Unknown");
                   binding.tvCallStatus.setText("Connecting...");
                   initWebRTC();
                   binding.btnEndCall.setOnClickListener(v -> endCall());
                   binding.btnToggleMic.setOnClickListener(v -> toggleMic());
                   binding.btnToggleCamera.setOnClickListener(v -> toggleCamera());
+                  // Caller side — receiver ko FCM push bhejo (server via)
+                  if (isCaller && partnerUid != null) {
+                      String myName = FirebaseAuth.getInstance().getCurrentUser().getDisplayName();
+                      if (myName == null || myName.isEmpty()) myName = "CallX User";
+                      // Firebase me bhi call entry (history / ongoing call ke liye)
+                      Map<String, Object> callData = new HashMap<>();
+                      callData.put("fromUid", currentUid);
+                      callData.put("fromName", myName);
+                      callData.put("timestamp", System.currentTimeMillis());
+                      FirebaseDatabase.getInstance(Constants.DB_URL)
+                          .getReference("calls").child(partnerUid).setValue(callData);
+                      // Server pe POST /notify
+                      sendNotifyRequest(partnerUid, currentUid, myName, "call", null);
+                  }
+              }
+              private void sendNotifyRequest(String toUid, String fromUid,
+                                             String fromName, String type, String text) {
+                  new Thread(() -> {
+                      HttpURLConnection conn = null;
+                      try {
+                          URL url = new URL(Constants.SERVER_URL + "/notify");
+                          conn = (HttpURLConnection) url.openConnection();
+                          conn.setRequestMethod("POST");
+                          conn.setRequestProperty("Content-Type", "application/json");
+                          conn.setConnectTimeout(8000);
+                          conn.setReadTimeout(8000);
+                          conn.setDoOutput(true);
+                          JSONObject body = new JSONObject();
+                          body.put("toUid", toUid);
+                          body.put("fromUid", fromUid);
+                          body.put("fromName", fromName != null ? fromName : "");
+                          body.put("type", type);
+                          if (text != null) body.put("text", text);
+                          OutputStream os = conn.getOutputStream();
+                          os.write(body.toString().getBytes("UTF-8"));
+                          os.close();
+                          int code = conn.getResponseCode();
+                          Log.d("CallX", "Notify response: " + code);
+                      } catch (Exception e) {
+                          Log.e("CallX", "Notify failed: " + e.getMessage());
+                      } finally {
+                          if (conn != null) conn.disconnect();
+                      }
+                  }).start();
               }
               private void initWebRTC() {
                   eglBase = EglBase.create();
@@ -1640,6 +1794,453 @@ jobs:
           }
           ENDOFFILE
 
+          # ============================================================
+          # JAVA — Constants.java  (DB URL + Render server URL)
+          # ============================================================
+          cat > app/src/main/java/com/callx/app/utils/Constants.java << 'ENDOFFILE'
+          package com.callx.app.utils;
+          public class Constants {
+              // Firebase Realtime DB
+              public static final String DB_URL =
+                  "https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app";
+              // Apna Render server URL yahan daalo (deploy ke baad)
+              public static final String SERVER_URL =
+                  "https://callx-server.onrender.com";
+              // Notification channels
+              public static final String CHANNEL_CALLS    = "callx_calls";
+              public static final String CHANNEL_MESSAGES = "callx_messages";
+          }
+          ENDOFFILE
+
+          # ============================================================
+          # JAVA — CallxMessagingService.java  (FCM receiver)
+          # Background / killed app me bhi notification yahin handle hota hai
+          # ============================================================
+          cat > app/src/main/java/com/callx/app/services/CallxMessagingService.java << 'ENDOFFILE'
+          package com.callx.app.services;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.content.Intent;
+          import android.media.AudioAttributes;
+          import android.media.RingtoneManager;
+          import android.os.Build;
+          import androidx.core.app.NotificationCompat;
+          import com.callx.app.R;
+          import com.callx.app.activities.ChatActivity;
+          import com.callx.app.activities.IncomingCallActivity;
+          import com.callx.app.utils.Constants;
+          import com.google.firebase.auth.FirebaseAuth;
+          import com.google.firebase.database.FirebaseDatabase;
+          import com.google.firebase.messaging.FirebaseMessagingService;
+          import com.google.firebase.messaging.RemoteMessage;
+          import java.util.Map;
+          public class CallxMessagingService extends FirebaseMessagingService {
+              @Override
+              public void onNewToken(String token) {
+                  super.onNewToken(token);
+                  if (FirebaseAuth.getInstance().getCurrentUser() != null) {
+                      String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+                      FirebaseDatabase.getInstance(Constants.DB_URL)
+                          .getReference("users").child(uid).child("fcmToken").setValue(token);
+                  }
+              }
+              @Override
+              public void onMessageReceived(RemoteMessage msg) {
+                  super.onMessageReceived(msg);
+                  Map<String, String> data = msg.getData();
+                  if (data == null || data.isEmpty()) return;
+                  createChannels();
+                  String type = data.get("type");
+                  if ("call".equals(type)) {
+                      showIncomingCall(data.get("fromUid"), data.get("fromName"));
+                  } else {
+                      showMessageNotification(
+                          data.get("fromUid"),
+                          data.get("fromName"),
+                          data.get("text"));
+                  }
+              }
+              private void showIncomingCall(String fromUid, String fromName) {
+                  Intent fullScreen = new Intent(this, IncomingCallActivity.class);
+                  fullScreen.putExtra("fromUid", fromUid);
+                  fullScreen.putExtra("fromName", fromName);
+                  fullScreen.addFlags(
+                      Intent.FLAG_ACTIVITY_NEW_TASK |
+                      Intent.FLAG_ACTIVITY_CLEAR_TOP |
+                      Intent.FLAG_ACTIVITY_NO_HISTORY);
+                  PendingIntent pi = PendingIntent.getActivity(
+                      this, 1001, fullScreen,
+                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                  android.app.Notification n =
+                      new NotificationCompat.Builder(this, Constants.CHANNEL_CALLS)
+                          .setSmallIcon(R.drawable.ic_call_notification)
+                          .setContentTitle("Incoming CallX")
+                          .setContentText((fromName != null ? fromName : "Unknown") + " calling...")
+                          .setPriority(NotificationCompat.PRIORITY_MAX)
+                          .setCategory(NotificationCompat.CATEGORY_CALL)
+                          .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
+                          .setFullScreenIntent(pi, true)
+                          .setContentIntent(pi)
+                          .setAutoCancel(true)
+                          .setOngoing(true)
+                          .build();
+                  NotificationManager nm =
+                      (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                  nm.notify(1001, n);
+                  // Also try direct launch (works when screen on / app foreground)
+                  try { startActivity(fullScreen); } catch (Exception ignored) {}
+              }
+              private void showMessageNotification(String fromUid, String fromName, String text) {
+                  Intent intent = new Intent(this, ChatActivity.class);
+                  intent.putExtra("partnerUid", fromUid);
+                  intent.putExtra("partnerName", fromName);
+                  intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                  PendingIntent pi = PendingIntent.getActivity(
+                      this, (fromUid != null ? fromUid.hashCode() : 2001), intent,
+                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                  android.app.Notification n =
+                      new NotificationCompat.Builder(this, Constants.CHANNEL_MESSAGES)
+                          .setSmallIcon(R.drawable.ic_message_notification)
+                          .setContentTitle(fromName != null ? fromName : "New message")
+                          .setContentText(text != null ? text : "")
+                          .setPriority(NotificationCompat.PRIORITY_HIGH)
+                          .setContentIntent(pi)
+                          .setAutoCancel(true)
+                          .build();
+                  NotificationManager nm =
+                      (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                  nm.notify((int) System.currentTimeMillis(), n);
+              }
+              private void createChannels() {
+                  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+                  NotificationManager nm =
+                      (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                  NotificationChannel calls = new NotificationChannel(
+                      Constants.CHANNEL_CALLS, "Incoming Calls",
+                      NotificationManager.IMPORTANCE_HIGH);
+                  AudioAttributes attrs = new AudioAttributes.Builder()
+                      .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                      .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                      .build();
+                  calls.setSound(
+                      RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), attrs);
+                  calls.enableVibration(true);
+                  calls.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+                  nm.createNotificationChannel(calls);
+                  NotificationChannel msgs = new NotificationChannel(
+                      Constants.CHANNEL_MESSAGES, "Messages",
+                      NotificationManager.IMPORTANCE_HIGH);
+                  nm.createNotificationChannel(msgs);
+              }
+          }
+          ENDOFFILE
+
+          # ============================================================
+          # JAVA — IncomingCallActivity.java  (full-screen incoming call)
+          # ============================================================
+          cat > app/src/main/java/com/callx/app/activities/IncomingCallActivity.java << 'ENDOFFILE'
+          package com.callx.app.activities;
+          import android.app.KeyguardManager;
+          import android.app.NotificationManager;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.view.WindowManager;
+          import android.widget.Button;
+          import android.widget.TextView;
+          import androidx.appcompat.app.AppCompatActivity;
+          import com.callx.app.R;
+          public class IncomingCallActivity extends AppCompatActivity {
+              private String fromUid, fromName;
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                      setShowWhenLocked(true);
+                      setTurnScreenOn(true);
+                      KeyguardManager km = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+                      if (km != null) km.requestDismissKeyguard(this, null);
+                  } else {
+                      getWindow().addFlags(
+                          WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                          WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
+                          WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
+                  }
+                  getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                  setContentView(R.layout.activity_incoming_call);
+                  fromUid  = getIntent().getStringExtra("fromUid");
+                  fromName = getIntent().getStringExtra("fromName");
+                  TextView tvName = findViewById(R.id.tv_caller_name);
+                  TextView tvSub  = findViewById(R.id.tv_caller_sub);
+                  tvName.setText(fromName != null ? fromName : "Unknown");
+                  tvSub.setText("Incoming CallX...");
+                  Button btnAccept = findViewById(R.id.btn_accept);
+                  Button btnReject = findViewById(R.id.btn_reject);
+                  btnAccept.setOnClickListener(v -> {
+                      cancelNotif();
+                      Intent i = new Intent(this, CallActivity.class);
+                      i.putExtra("partnerUid", fromUid);
+                      i.putExtra("partnerName", fromName);
+                      i.putExtra("isCaller", false);
+                      i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                      startActivity(i);
+                      finish();
+                  });
+                  btnReject.setOnClickListener(v -> {
+                      cancelNotif();
+                      finish();
+                  });
+              }
+              private void cancelNotif() {
+                  NotificationManager nm =
+                      (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                  if (nm != null) nm.cancel(1001);
+              }
+          }
+          ENDOFFILE
+
+          # ============================================================
+          # LAYOUT — activity_incoming_call.xml
+          # ============================================================
+          cat > app/src/main/res/layout/activity_incoming_call.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical"
+              android:background="#005c97"
+              android:gravity="center"
+              android:padding="32dp">
+              <TextView
+                  android:id="@+id/tv_caller_sub"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:textColor="#cce5ff"
+                  android:textSize="16sp"
+                  android:layout_marginTop="64dp"
+                  android:text="Incoming CallX..."/>
+              <TextView
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="😊"
+                  android:textSize="96sp"
+                  android:layout_marginTop="48dp"/>
+              <TextView
+                  android:id="@+id/tv_caller_name"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:textColor="#ffffff"
+                  android:textSize="32sp"
+                  android:textStyle="bold"
+                  android:layout_marginTop="16dp"
+                  android:text="Caller"/>
+              <View
+                  android:layout_width="0dp"
+                  android:layout_height="0dp"
+                  android:layout_weight="1"/>
+              <LinearLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:orientation="horizontal"
+                  android:gravity="center"
+                  android:layout_marginBottom="64dp">
+                  <Button
+                      android:id="@+id/btn_reject"
+                      android:layout_width="0dp"
+                      android:layout_height="wrap_content"
+                      android:layout_weight="1"
+                      android:layout_marginEnd="12dp"
+                      android:text="Reject"
+                      android:textColor="#ffffff"
+                      android:backgroundTint="#e91e63"/>
+                  <Button
+                      android:id="@+id/btn_accept"
+                      android:layout_width="0dp"
+                      android:layout_height="wrap_content"
+                      android:layout_weight="1"
+                      android:layout_marginStart="12dp"
+                      android:text="Accept"
+                      android:textColor="#ffffff"
+                      android:backgroundTint="#4CAF50"/>
+              </LinearLayout>
+          </LinearLayout>
+          ENDOFFILE
+
+          # ============================================================
+          # DRAWABLE — notification icons (vectors)
+          # ============================================================
+          cat > app/src/main/res/drawable/ic_call_notification.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp"
+              android:viewportWidth="24" android:viewportHeight="24"
+              android:tint="#ffffff">
+              <path android:fillColor="#ffffff"
+                  android:pathData="M20,15.5c-1.25,0 -2.45,-0.2 -3.57,-0.57c-0.35,-0.11 -0.74,-0.03 -1.02,0.24l-2.2,2.2c-2.83,-1.44 -5.15,-3.75 -6.59,-6.58l2.2,-2.21c0.28,-0.27 0.36,-0.66 0.25,-1.01C8.7,6.45 8.5,5.25 8.5,4c0,-0.55 -0.45,-1 -1,-1H4c-0.55,0 -1,0.45 -1,1c0,9.39 7.61,17 17,17c0.55,0 1,-0.45 1,-1v-3.5C21,15.95 20.55,15.5 20,15.5z"/>
+          </vector>
+          ENDOFFILE
+
+          cat > app/src/main/res/drawable/ic_message_notification.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp"
+              android:viewportWidth="24" android:viewportHeight="24"
+              android:tint="#ffffff">
+              <path android:fillColor="#ffffff"
+                  android:pathData="M20,2H4c-1.1,0 -1.99,0.9 -1.99,2L2,22l4,-4h14c1.1,0 2,-0.9 2,-2V4C22,2.9 21.1,2 20,2z"/>
+          </vector>
+          ENDOFFILE
+
+          # ============================================================
+          # SERVER — Render Node.js Express + Firebase Admin
+          # ============================================================
+          cat > server/package.json << 'ENDOFFILE'
+          {
+            "name": "callx-server",
+            "version": "1.0.0",
+            "description": "CallX FCM notification server",
+            "main": "index.js",
+            "scripts": {
+              "start": "node index.js"
+            },
+            "engines": {
+              "node": ">=18"
+            },
+            "dependencies": {
+              "express": "^4.19.2",
+              "firebase-admin": "^12.0.0"
+            }
+          }
+          ENDOFFILE
+
+          cat > server/index.js << 'ENDOFFILE'
+          const express = require('express');
+          const admin = require('firebase-admin');
+
+          const DB_URL = "https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app";
+
+          // FIREBASE_SERVICE_ACCOUNT env var: paste the full service account JSON
+          // (or base64-encoded JSON). Get it from Firebase Console →
+          // Project Settings → Service Accounts → Generate new private key.
+          let serviceAccount;
+          try {
+            const raw = (process.env.FIREBASE_SERVICE_ACCOUNT || '').trim();
+            if (!raw) {
+              console.error('FIREBASE_SERVICE_ACCOUNT env var missing');
+              process.exit(1);
+            }
+            serviceAccount = raw.startsWith('{')
+              ? JSON.parse(raw)
+              : JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+          } catch (e) {
+            console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT:', e.message);
+            process.exit(1);
+          }
+
+          admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount),
+            databaseURL: DB_URL,
+          });
+
+          const app = express();
+          app.use(express.json({ limit: '1mb' }));
+
+          app.get('/', (_req, res) => res.send('CallX server running ✅'));
+          app.get('/healthz', (_req, res) => res.json({ ok: true }));
+
+          async function getToken(uid) {
+            const snap = await admin.database().ref(`users/${uid}/fcmToken`).get();
+            return snap.exists() ? snap.val() : null;
+          }
+
+          // POST /notify
+          // body: { toUid, fromUid, fromName, type: 'call' | 'message', text? }
+          app.post('/notify', async (req, res) => {
+            try {
+              const { toUid, fromUid, fromName, type, text } = req.body || {};
+              if (!toUid || !type) {
+                return res.status(400).json({ error: 'toUid & type required' });
+              }
+              const token = await getToken(toUid);
+              if (!token) {
+                return res.status(404).json({ error: 'Receiver token not found' });
+              }
+              const message = {
+                token,
+                data: {
+                  type: String(type),
+                  fromUid: String(fromUid || ''),
+                  fromName: String(fromName || ''),
+                  text: String(text || ''),
+                },
+                android: {
+                  priority: 'high',
+                  ttl: 60 * 1000,
+                },
+              };
+              const id = await admin.messaging().send(message);
+              return res.json({ ok: true, id });
+            } catch (e) {
+              console.error('notify error:', e);
+              return res.status(500).json({ error: e.message });
+            }
+          });
+
+          const PORT = process.env.PORT || 3000;
+          app.listen(PORT, () => console.log(`CallX server listening on :${PORT}`));
+          ENDOFFILE
+
+          cat > server/render.yaml << 'ENDOFFILE'
+          services:
+            - type: web
+              name: callx-server
+              env: node
+              plan: free
+              rootDir: server
+              buildCommand: npm install
+              startCommand: npm start
+              envVars:
+                - key: FIREBASE_SERVICE_ACCOUNT
+                  sync: false
+          ENDOFFILE
+
+          cat > server/.gitignore << 'ENDOFFILE'
+          node_modules
+          .env
+          *.log
+          ENDOFFILE
+
+          cat > server/README.md << 'ENDOFFILE'
+          # CallX Server (Render)
+
+          FCM push notification trigger server for CallX Android app.
+
+          ## Deploy on Render
+
+          1. Push this repo to GitHub.
+          2. Go to https://dashboard.render.com → **New +** → **Web Service**.
+          3. Connect your GitHub repo.
+          4. Settings:
+             - **Root Directory**: `server`
+             - **Environment**: Node
+             - **Build Command**: `npm install`
+             - **Start Command**: `npm start`
+          5. Add **Environment Variable**:
+             - Key: `FIREBASE_SERVICE_ACCOUNT`
+             - Value: paste the full Firebase service account JSON
+               (Firebase Console → Project Settings → Service Accounts → Generate new private key).
+          6. Deploy. Note the URL (e.g. `https://callx-server.onrender.com`).
+          7. Open `app/src/main/java/com/callx/app/utils/Constants.java` and update
+             `SERVER_URL` to your Render URL. Rebuild APK.
+
+          ## Endpoints
+
+          - `GET  /healthz` — health check
+          - `POST /notify`  — body: `{ toUid, fromUid, fromName, type, text? }`
+          ENDOFFILE
+
           echo "✅ All files created successfully!"
 
       - name: Setup Gradle Wrapper
@@ -1655,7 +2256,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --cached --quiet || git commit -m "🚀 CallX — Full setup with Contacts feature"
+          git diff --cached --quiet || git commit -m "🚀 CallX — FCM push notifications + Render server"
           git push
 
       - name: Build Debug APK
