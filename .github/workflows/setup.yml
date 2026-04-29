@@ -165,7 +165,7 @@ jobs:
               defaultConfig {
                   applicationId "com.callx.app"
                   minSdk 23
-                  targetSdk 34
+                  targetSdk 33
                   versionCode __VERSION_CODE__
                   versionName "__VERSION_NAME__"
                   vectorDrawables.useSupportLibrary = true
@@ -261,6 +261,8 @@ jobs:
               <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
@@ -365,8 +367,7 @@ jobs:
                       android:foregroundServiceType="phoneCall|microphone|camera"/>
                   <service
                       android:name=".services.PresenceService"
-                      android:exported="false"
-                      android:foregroundServiceType="dataSync"/>
+                      android:exported="false"/>
                   <service
                       android:name=".services.LocationShareService"
                       android:exported="false"
