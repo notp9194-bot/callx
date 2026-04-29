@@ -19,6 +19,13 @@
         android:background="#e5ddd5"
         android:padding="8dp"
         android:clipToPadding="false"/>
+    <ProgressBar
+        android:id="@+id/upload_progress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:indeterminate="true"
+        android:visibility="gone"/>
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -26,6 +33,14 @@
         android:padding="8dp"
         android:background="#ffffff"
         android:gravity="center_vertical">
+        <ImageButton
+            android:id="@+id/btn_attach"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:src="@android:drawable/ic_menu_gallery"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Attach image"
+            android:tint="#005c97"/>
         <EditText
             android:id="@+id/et_message"
             android:layout_width="0dp"

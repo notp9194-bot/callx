@@ -17,9 +17,10 @@ import java.util.*;
 public class ChatActivity extends AppCompatActivity {
     private ActivityChatBinding binding;
     private MessageAdapter adapter;
-    private List<Message> messages = new ArrayList<>();
-    private String chatId, currentUid, partnerUid;
+    private final List<Message> messages = new ArrayList<>();
+    private String chatId, currentUid, partnerUid, partnerName;
     private DatabaseReference messagesRef;
+    private androidx.activity.result.ActivityResultLauncher<String> pickImageLauncher;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -29,7 +30,7 @@ public class ChatActivity extends AppCompatActivity {
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         currentUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
         partnerUid = getIntent().getStringExtra("partnerUid");
-        String partnerName = getIntent().getStringExtra("partnerName");
+        partnerName = getIntent().getStringExtra("partnerName");
         binding.toolbar.setTitle(partnerName != null ? partnerName : "Chat");
         String[] ids = {currentUid, partnerUid};
         Arrays.sort(ids);
@@ -37,7 +38,8 @@ public class ChatActivity extends AppCompatActivity {
         adapter = new MessageAdapter(messages, currentUid);
         binding.rvMessages.setLayoutManager(new LinearLayoutManager(this));
         binding.rvMessages.setAdapter(adapter);
-        messagesRef = FirebaseDatabase.getInstance("https://sathix-97a76-default-rtdb.asia-southeast1.firebasedatabase.app").getReference("messages").child(chatId);
+        messagesRef = FirebaseDatabase.getInstance(com.callx.app.utils.Constants.DB_URL)
+            .getReference("messages").child(chatId);
         messagesRef.addChildEventListener(new ChildEventListener() {
             public void onChildAdded(DataSnapshot s, String prev) {
                 Message msg = s.getValue(Message.class);
@@ -52,7 +54,12 @@ public class ChatActivity extends AppCompatActivity {
             public void onChildMoved(DataSnapshot s, String prev) {}
             public void onCancelled(DatabaseError e) {}
         });
+        // Image picker launcher (system gallery — no runtime perm needed)
+        pickImageLauncher = registerForActivityResult(
+            new androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+            uri -> { if (uri != null) uploadAndSendImage(uri); });
         binding.btnSend.setOnClickListener(v -> sendMessage());
+        binding.btnAttach.setOnClickListener(v -> pickImageLauncher.launch("image/*"));
     }
     private void sendMessage() {
         String text = binding.etMessage.getText().toString().trim();
@@ -60,13 +67,41 @@ public class ChatActivity extends AppCompatActivity {
         Map<String, Object> msg = new HashMap<>();
         msg.put("senderId", currentUid);
         msg.put("text", text);
+        msg.put("type", "text");
         msg.put("timestamp", ServerValue.TIMESTAMP);
         messagesRef.push().setValue(msg);
         binding.etMessage.setText("");
-        // Receiver ko FCM push (background/killed me bhi notif)
         String myName = FirebaseAuth.getInstance().getCurrentUser().getDisplayName();
         if (myName == null || myName.isEmpty()) myName = "CallX User";
         pushNotify(partnerUid, currentUid, myName, "message", text);
+    }
+    private void uploadAndSendImage(android.net.Uri uri) {
+        binding.uploadProgress.setVisibility(android.view.View.VISIBLE);
+        binding.btnAttach.setEnabled(false);
+        String folder = "callx/" + chatId;
+        com.callx.app.utils.CloudinaryUploader.upload(this, uri, folder,
+            new com.callx.app.utils.CloudinaryUploader.UploadCallback() {
+                @Override public void onSuccess(String secureUrl) {
+                    binding.uploadProgress.setVisibility(android.view.View.GONE);
+                    binding.btnAttach.setEnabled(true);
+                    Map<String, Object> msg = new HashMap<>();
+                    msg.put("senderId", currentUid);
+                    msg.put("imageUrl", secureUrl);
+                    msg.put("type", "image");
+                    msg.put("timestamp", ServerValue.TIMESTAMP);
+                    messagesRef.push().setValue(msg);
+                    String myName = FirebaseAuth.getInstance().getCurrentUser().getDisplayName();
+                    if (myName == null || myName.isEmpty()) myName = "CallX User";
+                    pushNotify(partnerUid, currentUid, myName, "message", "📷 Photo");
+                }
+                @Override public void onError(String message) {
+                    binding.uploadProgress.setVisibility(android.view.View.GONE);
+                    binding.btnAttach.setEnabled(true);
+                    android.widget.Toast.makeText(ChatActivity.this,
+                        "Upload fail: " + message,
+                        android.widget.Toast.LENGTH_LONG).show();
+                }
+            });
     }
     private void pushNotify(String toUid, String fromUid,
                             String fromName, String type, String text) {
