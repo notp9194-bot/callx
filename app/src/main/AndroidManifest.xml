@@ -51,6 +51,12 @@
         <activity android:name=".activities.SearchActivity"   android:exported="false"
             android:windowSoftInputMode="adjustResize"/>
         <activity android:name=".activities.RequestsActivity" android:exported="false"/>
+        <activity android:name=".activities.RequestPopupActivity"
+            android:exported="false"
+            android:theme="@style/Theme.CallX.Transparent"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""/>
         <activity android:name=".activities.ProfileActivity"  android:exported="false"/>
         <activity android:name=".activities.MediaViewerActivity"
             android:exported="false"

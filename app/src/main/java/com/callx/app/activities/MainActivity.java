@@ -78,6 +78,32 @@ public class MainActivity extends AppCompatActivity {
         });
         loadMyId();
         refreshFcmToken();
+        listenForNewRequests();
+    }
+    private long requestsBaselineTs = System.currentTimeMillis();
+    private void listenForNewRequests() {
+        String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        com.callx.app.utils.FirebaseUtils.getRequestsRef(uid)
+            .addChildEventListener(new com.google.firebase.database.ChildEventListener() {
+                @Override public void onChildAdded(DataSnapshot s, String prev) {
+                    Long at = s.child("at").getValue(Long.class);
+                    if (at == null || at < requestsBaselineTs) return; // sirf naye
+                    String fromUid  = s.child("fromUid").getValue(String.class);
+                    String fromName = s.child("fromName").getValue(String.class);
+                    if (fromName == null) fromName = s.child("name").getValue(String.class);
+                    if (fromUid == null)  fromUid  = s.getKey();
+                    if (fromName == null) fromName = "Friend";
+                    Intent i = new Intent(MainActivity.this,
+                        com.callx.app.activities.RequestPopupActivity.class);
+                    i.putExtra("fromUid", fromUid);
+                    i.putExtra("fromName", fromName);
+                    startActivity(i);
+                }
+                @Override public void onChildChanged(DataSnapshot s, String p) {}
+                @Override public void onChildRemoved(DataSnapshot s) {}
+                @Override public void onChildMoved(DataSnapshot s, String p) {}
+                @Override public void onCancelled(DatabaseError e) {}
+            });
     }
     private void updateFab(int position) {
         switch (position) {

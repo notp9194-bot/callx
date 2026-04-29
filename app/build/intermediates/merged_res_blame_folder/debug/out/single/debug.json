@@ -72,6 +72,10 @@
         "source": "com.callx.app-main-52:/layout/item_call_history.xml"
     },
     {
+        "merged": "com.callx.app-merged_res-50:/layout_dialog_request_popup.xml.flat",
+        "source": "com.callx.app-main-52:/layout/dialog_request_popup.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/layout_activity_media_viewer.xml.flat",
         "source": "com.callx.app-main-52:/layout/activity_media_viewer.xml"
     },

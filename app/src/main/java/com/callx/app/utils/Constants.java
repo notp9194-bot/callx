@@ -10,6 +10,7 @@ public class Constants {
     public static final String CHANNEL_MESSAGES = "callx_messages";
     public static final String CHANNEL_GROUPS   = "callx_groups";
     public static final String CHANNEL_STATUS   = "callx_status";
+    public static final String CHANNEL_REQUESTS = "callx_requests";
     public static final int HTTP_TIMEOUT_MS = 20000;
     public static final long STATUS_TTL_MS = 24L * 60 * 60 * 1000;
     private Constants() {}

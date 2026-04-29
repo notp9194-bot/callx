@@ -39,8 +39,11 @@ public class RequestsActivity extends AppCompatActivity {
                     User u = new User();
                     u.uid   = c.getKey();
                     u.name  = c.child("name").getValue(String.class);
+                    if (u.name == null)
+                        u.name = c.child("fromName").getValue(String.class);
                     u.about = c.child("about").getValue(String.class);
-                    if (u.name == null) u.name = "User";
+                    u.photoUrl = c.child("photoUrl").getValue(String.class);
+                    if (u.name == null || u.name.isEmpty()) u.name = "User";
                     requests.add(u);
                 }
                 adapter.notifyDataSetChanged();

@@ -56,5 +56,12 @@ public class CallxApp extends Application {
             Constants.CHANNEL_STATUS, "Status / Story",
             NotificationManager.IMPORTANCE_DEFAULT);
         nm.createNotificationChannel(status);
+
+        NotificationChannel reqs = new NotificationChannel(
+            Constants.CHANNEL_REQUESTS, "Contact Requests",
+            NotificationManager.IMPORTANCE_HIGH);
+        reqs.enableVibration(true);
+        reqs.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+        nm.createNotificationChannel(reqs);
     }
 }

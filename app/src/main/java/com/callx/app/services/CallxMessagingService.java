@@ -30,9 +30,39 @@ public class CallxMessagingService extends FirebaseMessagingService {
             showGroupMessage(data);
         } else if ("status".equals(type)) {
             showStatus(data);
+        } else if ("request".equals(type)) {
+            showRequest(data);
         } else {
             showMessage(data);
         }
+    }
+    private void showRequest(Map<String, String> data) {
+        String fromUid  = data.getOrDefault("fromUid", "");
+        String fromName = data.getOrDefault("fromName", "Friend");
+        // App khuli ho ya killed ho — dono case me bottom popup activity launch karo
+        Intent popup = new Intent(this, com.callx.app.activities.RequestPopupActivity.class);
+        popup.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+            | Intent.FLAG_ACTIVITY_CLEAR_TOP
+            | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        popup.putExtra("fromUid", fromUid);
+        popup.putExtra("fromName", fromName);
+        // Notification bhi dikhao taaki status bar me trace rahe
+        PendingIntent pi = PendingIntent.getActivity(this, 0, popup,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        NotificationCompat.Builder b = new NotificationCompat.Builder(this,
+                Constants.CHANNEL_REQUESTS)
+            .setSmallIcon(R.drawable.ic_person_add)
+            .setContentTitle(fromName)
+            .setContentText("Aapko contact request bheji hai")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setFullScreenIntent(pi, true)
+            .setContentIntent(pi);
+        NotificationManager nm = (NotificationManager)
+            getSystemService(Context.NOTIFICATION_SERVICE);
+        nm.notify(new Random().nextInt(99999), b.build());
+        // Popup bhi turant launch karo
+        try { startActivity(popup); } catch (Exception ignored) {}
     }
     private void showIncomingCall(Map<String, String> data, boolean isVideo) {
         Intent full = new Intent(this, IncomingCallActivity.class);

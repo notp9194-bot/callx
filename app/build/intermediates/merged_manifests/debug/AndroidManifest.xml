@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.callx.app"
-    android:versionCode="3"
-    android:versionName="2.0" >
+    android:versionCode="4"
+    android:versionName="2.1" >
 
     <uses-sdk
         android:minSdkVersion="23"
@@ -83,6 +83,13 @@
         <activity
             android:name="com.callx.app.activities.RequestsActivity"
             android:exported="false" />
+        <activity
+            android:name="com.callx.app.activities.RequestPopupActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/Theme.CallX.Transparent" />
         <activity
             android:name="com.callx.app.activities.ProfileActivity"
             android:exported="false" />

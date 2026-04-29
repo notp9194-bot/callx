@@ -63,7 +63,9 @@ public class SearchActivity extends AppCompatActivity {
         String myUid  = FirebaseAuth.getInstance().getCurrentUser().getUid();
         String myName = FirebaseUtils.getCurrentName();
         Map<String, Object> req = new HashMap<>();
+        req.put("uid", myUid);
         req.put("fromUid", myUid);
+        req.put("name", myName);
         req.put("fromName", myName);
         req.put("at", System.currentTimeMillis());
         FirebaseUtils.getRequestsRef(foundUid).child(myUid).setValue(req)
