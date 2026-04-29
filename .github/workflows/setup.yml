@@ -409,6 +409,7 @@ jobs:
               <color name="surface">#F2F4F7</color>
               <color name="surface_bg">#F8FAFC</color>
               <color name="surface_card">#FFFFFF</color>
+              <color name="surface_input">#F1F5F9</color>
               <color name="text_primary">#0F172A</color>
               <color name="text_secondary">#64748B</color>
               <color name="text_muted">#94A3B8</color>
@@ -417,6 +418,7 @@ jobs:
               <color name="online_green">#25D366</color>
               <color name="reject_red">#EF4444</color>
               <color name="accept_green">#22C55E</color>
+              <color name="action_call_accept">#22C55E</color>
               <color name="seen_blue">#34B7F1</color>
               <color name="reaction_bg">#F1F5F9</color>
               <color name="white">#FFFFFF</color>
@@ -439,6 +441,7 @@ jobs:
               <color name="surface">#1A2332</color>
               <color name="surface_bg">#0F172A</color>
               <color name="surface_card">#1E293B</color>
+              <color name="surface_input">#334155</color>
               <color name="text_primary">#F1F5F9</color>
               <color name="text_secondary">#94A3B8</color>
               <color name="text_muted">#64748B</color>
@@ -447,6 +450,7 @@ jobs:
               <color name="online_green">#25D366</color>
               <color name="reject_red">#F87171</color>
               <color name="accept_green">#34D399</color>
+              <color name="action_call_accept">#34D399</color>
               <color name="seen_blue">#53BDEB</color>
               <color name="reaction_bg">#1F2937</color>
               <color name="white">#FFFFFF</color>
