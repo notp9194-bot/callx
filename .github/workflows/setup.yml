@@ -251,6 +251,7 @@ jobs:
                   <activity android:name=".activities.NewGroupActivity" android:exported="false"/>
                   <activity android:name=".activities.SearchActivity"   android:exported="false"
                       android:windowSoftInputMode="adjustResize"/>
+                  <activity android:name=".activities.RequestsActivity" android:exported="false"/>
                   <activity android:name=".activities.ProfileActivity"  android:exported="false"/>
                   <activity android:name=".activities.MediaViewerActivity"
                       android:exported="false"
@@ -1651,12 +1652,71 @@ jobs:
               android:layout_width="match_parent"
               android:layout_height="match_parent"
               android:background="@color/surface_bg">
-              <androidx.recyclerview.widget.RecyclerView
-                  android:id="@+id/rv_chats"
+              <LinearLayout
                   android:layout_width="match_parent"
                   android:layout_height="match_parent"
-                  android:padding="8dp"
-                  android:clipToPadding="false"/>
+                  android:orientation="vertical">
+                  <!-- Friend / Contact request banner (top) -->
+                  <LinearLayout
+                      android:id="@+id/banner_requests"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:orientation="horizontal"
+                      android:gravity="center_vertical"
+                      android:padding="14dp"
+                      android:layout_margin="10dp"
+                      android:background="@drawable/bg_request_banner"
+                      android:clickable="true"
+                      android:focusable="true"
+                      android:visibility="gone">
+                      <ImageView
+                          android:layout_width="40dp"
+                          android:layout_height="40dp"
+                          android:src="@drawable/ic_person_add"
+                          android:padding="8dp"
+                          android:background="@drawable/bg_circle_white"/>
+                      <LinearLayout
+                          android:layout_width="0dp"
+                          android:layout_height="wrap_content"
+                          android:layout_weight="1"
+                          android:orientation="vertical"
+                          android:layout_marginStart="12dp">
+                          <TextView
+                              android:id="@+id/tv_request_title"
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:text="Naye contact requests"
+                              android:textColor="#FFFFFF"
+                              android:textSize="15sp"
+                              android:textStyle="bold"/>
+                          <TextView
+                              android:id="@+id/tv_request_sub"
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:text="Tap karke dekho"
+                              android:textColor="#E0E7FF"
+                              android:textSize="12sp"/>
+                      </LinearLayout>
+                      <TextView
+                          android:id="@+id/tv_request_count"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:text="0"
+                          android:minWidth="28dp"
+                          android:gravity="center"
+                          android:padding="6dp"
+                          android:textColor="@color/brand_primary"
+                          android:textStyle="bold"
+                          android:textSize="14sp"
+                          android:background="@drawable/bg_circle_white"/>
+                  </LinearLayout>
+                  <androidx.recyclerview.widget.RecyclerView
+                      android:id="@+id/rv_chats"
+                      android:layout_width="match_parent"
+                      android:layout_height="match_parent"
+                      android:padding="8dp"
+                      android:clipToPadding="false"/>
+              </LinearLayout>
               <LinearLayout
                   android:id="@+id/empty_state"
                   android:layout_width="match_parent"
@@ -1680,6 +1740,75 @@ jobs:
                       android:layout_marginTop="6dp"/>
               </LinearLayout>
           </FrameLayout>
+          ENDOFFILE
+
+          # bg_request_banner.xml — gradient pill background for requests banner
+          cat > app/src/main/res/drawable/bg_request_banner.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <corners android:radius="16dp"/>
+              <gradient
+                  android:startColor="@color/brand_gradient_start"
+                  android:endColor="@color/brand_gradient_end"
+                  android:angle="0"/>
+          </shape>
+          ENDOFFILE
+
+          # bg_circle_white.xml — white circular badge background
+          cat > app/src/main/res/drawable/bg_circle_white.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+              <solid android:color="#FFFFFF"/>
+          </shape>
+          ENDOFFILE
+
+          # ic_person_add.xml — vector for add-person icon
+          cat > app/src/main/res/drawable/ic_person_add.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp"
+              android:viewportWidth="24" android:viewportHeight="24"
+              android:tint="@color/brand_primary">
+              <path android:fillColor="#000"
+                  android:pathData="M15,12c2.21,0 4,-1.79 4,-4s-1.79,-4 -4,-4 -4,1.79 -4,4 1.79,4 4,4zM6,10L6,7L4,7v3L1,10v2h3v3h2v-3h3v-2L6,10zM15,14c-2.67,0 -8,1.34 -8,4v2h16v-2c0,-2.66 -5.33,-4 -8,-4z"/>
+          </vector>
+          ENDOFFILE
+
+          # activity_requests.xml — full-screen list of received requests
+          cat > app/src/main/res/layout/activity_requests.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical"
+              android:background="@color/surface_bg">
+              <com.google.android.material.appbar.MaterialToolbar
+                  android:id="@+id/toolbar"
+                  android:layout_width="match_parent"
+                  android:layout_height="?attr/actionBarSize"
+                  android:background="@color/brand_primary"
+                  app:title="Contact requests"
+                  app:titleTextColor="#FFFFFF"
+                  app:navigationIcon="@drawable/ic_arrow_back"
+                  xmlns:app="http://schemas.android.com/apk/res-auto"/>
+              <androidx.recyclerview.widget.RecyclerView
+                  android:id="@+id/rv_requests"
+                  android:layout_width="match_parent"
+                  android:layout_height="0dp"
+                  android:layout_weight="1"
+                  android:padding="8dp"
+                  android:clipToPadding="false"/>
+              <TextView
+                  android:id="@+id/empty_requests"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:padding="32dp"
+                  android:gravity="center"
+                  android:text="Abhi koi nayi request nahi hai"
+                  android:textColor="@color/text_muted"
+                  android:textSize="14sp"
+                  android:visibility="gone"/>
+          </LinearLayout>
           ENDOFFILE
 
           cat > app/src/main/res/layout/fragment_status.xml << 'ENDOFFILE'
@@ -5168,13 +5297,16 @@ jobs:
           # ============================================================
           cat > app/src/main/java/com/callx/app/fragments/ChatsFragment.java << 'ENDOFFILE'
           package com.callx.app.fragments;
+          import android.content.Intent;
           import android.os.Bundle;
           import android.view.*;
+          import android.widget.TextView;
           import androidx.annotation.NonNull;
           import androidx.fragment.app.Fragment;
           import androidx.recyclerview.widget.LinearLayoutManager;
           import androidx.recyclerview.widget.RecyclerView;
           import com.callx.app.R;
+          import com.callx.app.activities.RequestsActivity;
           import com.callx.app.adapters.ChatListAdapter;
           import com.callx.app.models.User;
           import com.callx.app.utils.FirebaseUtils;
@@ -5185,16 +5317,23 @@ jobs:
           public class ChatsFragment extends Fragment {
               private final List<User> contacts = new ArrayList<>();
               private ChatListAdapter adapter;
-              private View emptyState;
+              private View emptyState, bannerRequests;
+              private TextView tvRequestCount, tvRequestSub;
               @Override
               public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup parent, Bundle s) {
                   View v = inflater.inflate(R.layout.fragment_chats, parent, false);
                   RecyclerView rv = v.findViewById(R.id.rv_chats);
-                  emptyState = v.findViewById(R.id.empty_state);
+                  emptyState     = v.findViewById(R.id.empty_state);
+                  bannerRequests = v.findViewById(R.id.banner_requests);
+                  tvRequestCount = v.findViewById(R.id.tv_request_count);
+                  tvRequestSub   = v.findViewById(R.id.tv_request_sub);
+                  bannerRequests.setOnClickListener(x ->
+                      startActivity(new Intent(getContext(), RequestsActivity.class)));
                   rv.setLayoutManager(new LinearLayoutManager(getContext()));
                   adapter = new ChatListAdapter(contacts);
                   rv.setAdapter(adapter);
                   loadContacts();
+                  loadRequestsCount();
                   return v;
               }
               private void loadContacts() {
@@ -5216,6 +5355,84 @@ jobs:
                           }
                           @Override public void onCancelled(DatabaseError e) {}
                       });
+              }
+              private void loadRequestsCount() {
+                  if (FirebaseAuth.getInstance().getCurrentUser() == null) return;
+                  String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+                  FirebaseUtils.getRequestsRef(uid)
+                      .addValueEventListener(new ValueEventListener() {
+                          @Override public void onDataChange(DataSnapshot snap) {
+                              long n = snap.getChildrenCount();
+                              if (n > 0) {
+                                  bannerRequests.setVisibility(View.VISIBLE);
+                                  tvRequestCount.setText(String.valueOf(n));
+                                  tvRequestSub.setText(n == 1
+                                      ? "1 nayi request — tap karke dekho"
+                                      : n + " nayi requests — tap karke dekho");
+                              } else {
+                                  bannerRequests.setVisibility(View.GONE);
+                              }
+                          }
+                          @Override public void onCancelled(DatabaseError e) {}
+                      });
+              }
+          }
+          ENDOFFILE
+
+          # ============================================================
+          # JAVA — RequestsActivity (incoming friend / contact requests)
+          # ============================================================
+          cat > app/src/main/java/com/callx/app/activities/RequestsActivity.java << 'ENDOFFILE'
+          package com.callx.app.activities;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.widget.TextView;
+          import androidx.appcompat.app.AppCompatActivity;
+          import androidx.recyclerview.widget.LinearLayoutManager;
+          import androidx.recyclerview.widget.RecyclerView;
+          import com.callx.app.R;
+          import com.callx.app.adapters.RequestAdapter;
+          import com.callx.app.models.User;
+          import com.callx.app.utils.FirebaseUtils;
+          import com.google.android.material.appbar.MaterialToolbar;
+          import com.google.firebase.database.*;
+          import java.util.ArrayList;
+          import java.util.List;
+          public class RequestsActivity extends AppCompatActivity {
+              private final List<User> requests = new ArrayList<>();
+              private RequestAdapter adapter;
+              private TextView empty;
+              @Override protected void onCreate(Bundle s) {
+                  super.onCreate(s);
+                  setContentView(R.layout.activity_requests);
+                  MaterialToolbar tb = findViewById(R.id.toolbar);
+                  tb.setNavigationOnClickListener(v -> finish());
+                  RecyclerView rv = findViewById(R.id.rv_requests);
+                  empty = findViewById(R.id.empty_requests);
+                  rv.setLayoutManager(new LinearLayoutManager(this));
+                  adapter = new RequestAdapter(requests);
+                  rv.setAdapter(adapter);
+                  load();
+              }
+              private void load() {
+                  String uid = FirebaseUtils.getCurrentUid();
+                  if (uid == null) { finish(); return; }
+                  FirebaseUtils.getRequestsRef(uid).addValueEventListener(new ValueEventListener() {
+                      @Override public void onDataChange(DataSnapshot snap) {
+                          requests.clear();
+                          for (DataSnapshot c : snap.getChildren()) {
+                              User u = new User();
+                              u.uid   = c.getKey();
+                              u.name  = c.child("name").getValue(String.class);
+                              u.about = c.child("about").getValue(String.class);
+                              if (u.name == null) u.name = "User";
+                              requests.add(u);
+                          }
+                          adapter.notifyDataSetChanged();
+                          empty.setVisibility(requests.isEmpty() ? View.VISIBLE : View.GONE);
+                      }
+                      @Override public void onCancelled(DatabaseError e) {}
+                  });
               }
           }
           ENDOFFILE
