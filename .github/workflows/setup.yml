@@ -2553,6 +2553,15 @@ jobs:
               public static String myUid() {
                   return FirebaseAuth.getInstance().getUid();
               }
+              public static String getCurrentUid() { return myUid(); }
+              public static String getCurrentName() {
+                  com.google.firebase.auth.FirebaseUser u = FirebaseAuth.getInstance().getCurrentUser();
+                  if (u == null) return "";
+                  String n = u.getDisplayName();
+                  if (n != null && !n.isEmpty()) return n;
+                  String e = u.getEmail();
+                  return e == null ? "" : e;
+              }
               public static DatabaseReference users()    { return db().getReference("users"); }
               public static DatabaseReference chats()    { return db().getReference("chats"); }
               public static DatabaseReference groups()   { return db().getReference("groups"); }
@@ -2564,6 +2573,11 @@ jobs:
               public static DatabaseReference blocks()   { return db().getReference("blocks"); }
               public static DatabaseReference starred()  { return db().getReference("starred"); }
               public static DatabaseReference invites()  { return db().getReference("invites"); }
+              public static DatabaseReference requests() { return db().getReference("requests"); }
+              public static DatabaseReference contacts() { return db().getReference("contacts"); }
+              public static DatabaseReference getContactsRef(String uid) {
+                  return db().getReference("contacts").child(uid);
+              }
               public static String chatKey(String a, String b) {
                   return (a.compareTo(b) < 0) ? a + "_" + b : b + "_" + a;
               }
