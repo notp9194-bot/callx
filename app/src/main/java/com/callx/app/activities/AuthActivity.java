@@ -9,6 +9,8 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.auth.UserProfileChangeRequest;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.messaging.FirebaseMessaging;
+import com.callx.app.utils.Constants;
 import java.util.HashMap;
 import java.util.Map;
 public class AuthActivity extends AppCompatActivity {
@@ -31,7 +33,7 @@ public class AuthActivity extends AppCompatActivity {
             }
             if (isLoginMode) {
                 auth.signInWithEmailAndPassword(email, password)
-                    .addOnSuccessListener(r -> goToMain())
+                    .addOnSuccessListener(r -> { saveFcmToken(); goToMain(); })
                     .addOnFailureListener(e -> showError(e.getMessage()));
             } else {
                 String name = binding.etName.getText().toString().trim();
@@ -57,6 +59,7 @@ public class AuthActivity extends AppCompatActivity {
                                 Toast.makeText(this,
                                     "Account bana!\nTumhara CallX ID: " + callxId,
                                     Toast.LENGTH_LONG).show();
+                                saveFcmToken();
                                 goToMain();
                             });
                     })
@@ -75,6 +78,18 @@ public class AuthActivity extends AppCompatActivity {
     private void showError(String msg) {
         binding.tvError.setVisibility(View.VISIBLE);
         binding.tvError.setText(msg);
+    }
+    private void saveFcmToken() {
+        FirebaseUser user = auth.getCurrentUser();
+        if (user == null) return;
+        String uid = user.getUid();
+        FirebaseMessaging.getInstance().getToken()
+            .addOnSuccessListener(token -> {
+                if (token == null) return;
+                FirebaseDatabase.getInstance(Constants.DB_URL)
+                    .getReference("users").child(uid)
+                    .child("fcmToken").setValue(token);
+            });
     }
     private void goToMain() {
         startActivity(new Intent(this, MainActivity.class));

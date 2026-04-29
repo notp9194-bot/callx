@@ -1,12 +1,18 @@
 package com.callx.app.activities;
 import android.os.Bundle;
+import android.util.Log;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import com.callx.app.adapters.MessageAdapter;
 import com.callx.app.databinding.ActivityChatBinding;
 import com.callx.app.models.Message;
+import com.callx.app.utils.Constants;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.*;
+import org.json.JSONObject;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.*;
 public class ChatActivity extends AppCompatActivity {
     private ActivityChatBinding binding;
@@ -57,6 +63,40 @@ public class ChatActivity extends AppCompatActivity {
         msg.put("timestamp", ServerValue.TIMESTAMP);
         messagesRef.push().setValue(msg);
         binding.etMessage.setText("");
+        // Receiver ko FCM push (background/killed me bhi notif)
+        String myName = FirebaseAuth.getInstance().getCurrentUser().getDisplayName();
+        if (myName == null || myName.isEmpty()) myName = "CallX User";
+        pushNotify(partnerUid, currentUid, myName, "message", text);
+    }
+    private void pushNotify(String toUid, String fromUid,
+                            String fromName, String type, String text) {
+        new Thread(() -> {
+            HttpURLConnection conn = null;
+            try {
+                URL url = new URL(Constants.SERVER_URL + "/notify");
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setConnectTimeout(8000);
+                conn.setReadTimeout(8000);
+                conn.setDoOutput(true);
+                JSONObject body = new JSONObject();
+                body.put("toUid", toUid);
+                body.put("fromUid", fromUid);
+                body.put("fromName", fromName);
+                body.put("type", type);
+                if (text != null) body.put("text", text);
+                OutputStream os = conn.getOutputStream();
+                os.write(body.toString().getBytes("UTF-8"));
+                os.close();
+                int code = conn.getResponseCode();
+                Log.d("CallX", "Msg notify: " + code);
+            } catch (Exception e) {
+                Log.e("CallX", "Msg notify failed: " + e.getMessage());
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }).start();
     }
     @Override
     public boolean onSupportNavigateUp() { finish(); return true; }
