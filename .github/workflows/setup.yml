@@ -122,7 +122,6 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
-                  maven { url "https://repo.getstream.io/artifactory/libs-release/" }
                   maven { url "https://jitpack.io" }
               }
           }
@@ -7304,7 +7303,6 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
-                  maven { url "https://repo.getstream.io/artifactory/libs-release/" }
                   maven { url "https://jitpack.io" }
               }
           }
