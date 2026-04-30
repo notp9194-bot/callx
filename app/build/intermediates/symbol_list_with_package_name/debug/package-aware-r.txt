@@ -43,6 +43,10 @@ anim m3_side_sheet_exit_to_right
 anim mtrl_bottom_sheet_slide_in
 anim mtrl_bottom_sheet_slide_out
 anim mtrl_card_lowers_interpolator
+anim scale_down
+anim scale_up
+anim slide_down_out
+anim slide_up_in
 animator design_appbar_state_list_animator
 animator design_fab_hide_motion_spec
 animator design_fab_show_motion_spec
@@ -3347,7 +3351,16 @@ drawable notification_template_icon_bg
 drawable notification_template_icon_low_bg
 drawable notification_tile_bg
 drawable notify_panel_notification_icon_bg
+drawable progress_segment_bg
+drawable progress_segment_fill
+drawable reply_input_bg
 drawable rounded_input_bg
+drawable send_button_bg
+drawable status_card_bg
+drawable status_card_placeholder
+drawable status_gradient_overlay
+drawable status_viewer_bottom_scrim
+drawable status_viewer_topbar_scrim
 drawable test_level_drawable
 drawable tooltip_frame_dark
 drawable tooltip_frame_light
@@ -3491,6 +3504,7 @@ id btn_reject
 id btn_save
 id btn_search
 id btn_send
+id btn_send_reply
 id btn_signup
 id btn_sp_later
 id btn_sp_unblock
@@ -3502,6 +3516,7 @@ id cache_measures
 id callMeasure
 id cancel_action
 id cancel_button
+id card_status
 id carryVelocity
 id cb_select
 id center
@@ -3580,6 +3595,7 @@ id empty_calls
 id empty_groups
 id empty_requests
 id empty_state
+id empty_status
 id end
 id endToStart
 id end_padder
@@ -3592,6 +3608,7 @@ id et_message
 id et_mobile
 id et_name
 id et_password
+id et_reply
 id et_search_id
 id et_text
 id exitUntilCollapsed
@@ -3664,6 +3681,7 @@ id fixed
 id fixed_height
 id fixed_width
 id fl_avatar_picker
+id fl_media
 id fl_text_status
 id fl_video
 id flip
@@ -3705,6 +3723,7 @@ id italic
 id item_touch_helper_previous_elevation
 id iv_avatar
 id iv_avatar_preview
+id iv_bg
 id iv_call_avatar
 id iv_caller_avatar
 id iv_file_icon
@@ -3861,12 +3880,13 @@ id position
 id postLayout
 id pressed
 id progress_circular
+id progress_container
 id progress_horizontal
-id progress_status
 id radio
 id ratio
 id rectangles
 id remote_video
+id reply_bar
 id report_drawn
 id reverseSawtooth
 id right
@@ -3874,6 +3894,7 @@ id rightToLeft
 id right_icon
 id right_side
 id ring
+id root_viewer
 id rounded
 id row_index_key
 id rv_calls
@@ -4018,6 +4039,7 @@ id tv_meta
 id tv_my_id
 id tv_name
 id tv_owner
+id tv_owner_time
 id tv_request_count
 id tv_request_sub
 id tv_request_title
@@ -4027,6 +4049,7 @@ id tv_sender_name
 id tv_sp_name
 id tv_sp_text
 id tv_status
+id tv_status_count
 id tv_sub
 id tv_text_status
 id tv_time
@@ -4059,6 +4082,8 @@ id wrap_content
 id wrap_content_constrained
 id x_left
 id x_right
+id zone_next
+id zone_prev
 id zoom
 integer abc_config_activityDefaultDur
 integer abc_config_activityShortDur

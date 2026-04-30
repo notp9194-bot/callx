@@ -5,6 +5,8 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
@@ -21,16 +23,25 @@ public final class FragmentStatusBinding implements ViewBinding {
   private final FrameLayout rootView;
 
   @NonNull
+  public final LinearLayout emptyStatus;
+
+  @NonNull
   public final FloatingActionButton fabNewStatus;
 
   @NonNull
   public final RecyclerView rvStatus;
 
-  private FragmentStatusBinding(@NonNull FrameLayout rootView,
-      @NonNull FloatingActionButton fabNewStatus, @NonNull RecyclerView rvStatus) {
+  @NonNull
+  public final TextView tvStatusCount;
+
+  private FragmentStatusBinding(@NonNull FrameLayout rootView, @NonNull LinearLayout emptyStatus,
+      @NonNull FloatingActionButton fabNewStatus, @NonNull RecyclerView rvStatus,
+      @NonNull TextView tvStatusCount) {
     this.rootView = rootView;
+    this.emptyStatus = emptyStatus;
     this.fabNewStatus = fabNewStatus;
     this.rvStatus = rvStatus;
+    this.tvStatusCount = tvStatusCount;
   }
 
   @Override
@@ -60,6 +71,12 @@ public final class FragmentStatusBinding implements ViewBinding {
     // This is done to optimize the compiled bytecode for size and performance.
     int id;
     missingId: {
+      id = R.id.empty_status;
+      LinearLayout emptyStatus = ViewBindings.findChildViewById(rootView, id);
+      if (emptyStatus == null) {
+        break missingId;
+      }
+
       id = R.id.fab_new_status;
       FloatingActionButton fabNewStatus = ViewBindings.findChildViewById(rootView, id);
       if (fabNewStatus == null) {
@@ -72,7 +89,14 @@ public final class FragmentStatusBinding implements ViewBinding {
         break missingId;
       }
 
-      return new FragmentStatusBinding((FrameLayout) rootView, fabNewStatus, rvStatus);
+      id = R.id.tv_status_count;
+      TextView tvStatusCount = ViewBindings.findChildViewById(rootView, id);
+      if (tvStatusCount == null) {
+        break missingId;
+      }
+
+      return new FragmentStatusBinding((FrameLayout) rootView, emptyStatus, fabNewStatus, rvStatus,
+          tvStatusCount);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

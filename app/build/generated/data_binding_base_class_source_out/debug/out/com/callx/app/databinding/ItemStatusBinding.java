@@ -4,10 +4,11 @@ package com.callx.app.databinding;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.cardview.widget.CardView;
 import androidx.viewbinding.ViewBinding;
 import androidx.viewbinding.ViewBindings;
 import com.callx.app.R;
@@ -18,10 +19,16 @@ import java.lang.String;
 
 public final class ItemStatusBinding implements ViewBinding {
   @NonNull
-  private final LinearLayout rootView;
+  private final CardView rootView;
+
+  @NonNull
+  public final CardView cardStatus;
 
   @NonNull
   public final CircleImageView ivAvatar;
+
+  @NonNull
+  public final ImageView ivBg;
 
   @NonNull
   public final View ring;
@@ -32,10 +39,13 @@ public final class ItemStatusBinding implements ViewBinding {
   @NonNull
   public final TextView tvTime;
 
-  private ItemStatusBinding(@NonNull LinearLayout rootView, @NonNull CircleImageView ivAvatar,
-      @NonNull View ring, @NonNull TextView tvName, @NonNull TextView tvTime) {
+  private ItemStatusBinding(@NonNull CardView rootView, @NonNull CardView cardStatus,
+      @NonNull CircleImageView ivAvatar, @NonNull ImageView ivBg, @NonNull View ring,
+      @NonNull TextView tvName, @NonNull TextView tvTime) {
     this.rootView = rootView;
+    this.cardStatus = cardStatus;
     this.ivAvatar = ivAvatar;
+    this.ivBg = ivBg;
     this.ring = ring;
     this.tvName = tvName;
     this.tvTime = tvTime;
@@ -43,7 +53,7 @@ public final class ItemStatusBinding implements ViewBinding {
 
   @Override
   @NonNull
-  public LinearLayout getRoot() {
+  public CardView getRoot() {
     return rootView;
   }
 
@@ -68,9 +78,17 @@ public final class ItemStatusBinding implements ViewBinding {
     // This is done to optimize the compiled bytecode for size and performance.
     int id;
     missingId: {
+      CardView cardStatus = (CardView) rootView;
+
       id = R.id.iv_avatar;
       CircleImageView ivAvatar = ViewBindings.findChildViewById(rootView, id);
       if (ivAvatar == null) {
+        break missingId;
+      }
+
+      id = R.id.iv_bg;
+      ImageView ivBg = ViewBindings.findChildViewById(rootView, id);
+      if (ivBg == null) {
         break missingId;
       }
 
@@ -92,7 +110,8 @@ public final class ItemStatusBinding implements ViewBinding {
         break missingId;
       }
 
-      return new ItemStatusBinding((LinearLayout) rootView, ivAvatar, ring, tvName, tvTime);
+      return new ItemStatusBinding((CardView) rootView, cardStatus, ivAvatar, ivBg, ring, tvName,
+          tvTime);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

@@ -4,10 +4,11 @@ package com.callx.app.databinding;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
-import android.widget.ProgressBar;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -28,6 +29,15 @@ public final class ActivityStatusViewerBinding implements ViewBinding {
   public final ImageButton btnCloseStatus;
 
   @NonNull
+  public final ImageButton btnSendReply;
+
+  @NonNull
+  public final EditText etReply;
+
+  @NonNull
+  public final FrameLayout flMedia;
+
+  @NonNull
   public final FrameLayout flTextStatus;
 
   @NonNull
@@ -40,28 +50,53 @@ public final class ActivityStatusViewerBinding implements ViewBinding {
   public final PlayerView player;
 
   @NonNull
-  public final ProgressBar progressStatus;
+  public final LinearLayout progressContainer;
+
+  @NonNull
+  public final LinearLayout replyBar;
+
+  @NonNull
+  public final FrameLayout rootViewer;
 
   @NonNull
   public final TextView tvOwner;
 
   @NonNull
+  public final TextView tvOwnerTime;
+
+  @NonNull
   public final TextView tvTextStatus;
 
+  @NonNull
+  public final View zoneNext;
+
+  @NonNull
+  public final View zonePrev;
+
   private ActivityStatusViewerBinding(@NonNull FrameLayout rootView,
-      @NonNull ImageButton btnCloseStatus, @NonNull FrameLayout flTextStatus,
+      @NonNull ImageButton btnCloseStatus, @NonNull ImageButton btnSendReply,
+      @NonNull EditText etReply, @NonNull FrameLayout flMedia, @NonNull FrameLayout flTextStatus,
       @NonNull CircleImageView ivOwner, @NonNull ImageView ivStatus, @NonNull PlayerView player,
-      @NonNull ProgressBar progressStatus, @NonNull TextView tvOwner,
-      @NonNull TextView tvTextStatus) {
+      @NonNull LinearLayout progressContainer, @NonNull LinearLayout replyBar,
+      @NonNull FrameLayout rootViewer, @NonNull TextView tvOwner, @NonNull TextView tvOwnerTime,
+      @NonNull TextView tvTextStatus, @NonNull View zoneNext, @NonNull View zonePrev) {
     this.rootView = rootView;
     this.btnCloseStatus = btnCloseStatus;
+    this.btnSendReply = btnSendReply;
+    this.etReply = etReply;
+    this.flMedia = flMedia;
     this.flTextStatus = flTextStatus;
     this.ivOwner = ivOwner;
     this.ivStatus = ivStatus;
     this.player = player;
-    this.progressStatus = progressStatus;
+    this.progressContainer = progressContainer;
+    this.replyBar = replyBar;
+    this.rootViewer = rootViewer;
     this.tvOwner = tvOwner;
+    this.tvOwnerTime = tvOwnerTime;
     this.tvTextStatus = tvTextStatus;
+    this.zoneNext = zoneNext;
+    this.zonePrev = zonePrev;
   }
 
   @Override
@@ -97,6 +132,24 @@ public final class ActivityStatusViewerBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.btn_send_reply;
+      ImageButton btnSendReply = ViewBindings.findChildViewById(rootView, id);
+      if (btnSendReply == null) {
+        break missingId;
+      }
+
+      id = R.id.et_reply;
+      EditText etReply = ViewBindings.findChildViewById(rootView, id);
+      if (etReply == null) {
+        break missingId;
+      }
+
+      id = R.id.fl_media;
+      FrameLayout flMedia = ViewBindings.findChildViewById(rootView, id);
+      if (flMedia == null) {
+        break missingId;
+      }
+
       id = R.id.fl_text_status;
       FrameLayout flTextStatus = ViewBindings.findChildViewById(rootView, id);
       if (flTextStatus == null) {
@@ -121,15 +174,29 @@ public final class ActivityStatusViewerBinding implements ViewBinding {
         break missingId;
       }
 
-      id = R.id.progress_status;
-      ProgressBar progressStatus = ViewBindings.findChildViewById(rootView, id);
-      if (progressStatus == null) {
+      id = R.id.progress_container;
+      LinearLayout progressContainer = ViewBindings.findChildViewById(rootView, id);
+      if (progressContainer == null) {
         break missingId;
       }
+
+      id = R.id.reply_bar;
+      LinearLayout replyBar = ViewBindings.findChildViewById(rootView, id);
+      if (replyBar == null) {
+        break missingId;
+      }
+
+      FrameLayout rootViewer = (FrameLayout) rootView;
 
       id = R.id.tv_owner;
       TextView tvOwner = ViewBindings.findChildViewById(rootView, id);
       if (tvOwner == null) {
+        break missingId;
+      }
+
+      id = R.id.tv_owner_time;
+      TextView tvOwnerTime = ViewBindings.findChildViewById(rootView, id);
+      if (tvOwnerTime == null) {
         break missingId;
       }
 
@@ -139,8 +206,21 @@ public final class ActivityStatusViewerBinding implements ViewBinding {
         break missingId;
       }
 
-      return new ActivityStatusViewerBinding((FrameLayout) rootView, btnCloseStatus, flTextStatus,
-          ivOwner, ivStatus, player, progressStatus, tvOwner, tvTextStatus);
+      id = R.id.zone_next;
+      View zoneNext = ViewBindings.findChildViewById(rootView, id);
+      if (zoneNext == null) {
+        break missingId;
+      }
+
+      id = R.id.zone_prev;
+      View zonePrev = ViewBindings.findChildViewById(rootView, id);
+      if (zonePrev == null) {
+        break missingId;
+      }
+
+      return new ActivityStatusViewerBinding((FrameLayout) rootView, btnCloseStatus, btnSendReply,
+          etReply, flMedia, flTextStatus, ivOwner, ivStatus, player, progressContainer, replyBar,
+          rootViewer, tvOwner, tvOwnerTime, tvTextStatus, zoneNext, zonePrev);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

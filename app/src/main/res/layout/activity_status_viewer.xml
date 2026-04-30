@@ -1,71 +1,190 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root_viewer"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/black">
-    <ImageView
-        android:id="@+id/iv_status"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:scaleType="centerCrop"
-        android:visibility="gone"/>
-    <androidx.media3.ui.PlayerView
-        android:id="@+id/player"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone"/>
+
+    <!-- Media container (fades on transition) -->
     <FrameLayout
-        android:id="@+id/fl_text_status"
+        android:id="@+id/fl_media"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <ImageView
+            android:id="@+id/iv_status"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitCenter"
+            android:visibility="gone"
+            android:contentDescription="Status image"/>
+
+        <androidx.media3.ui.PlayerView
+            android:id="@+id/player"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            app:use_controller="false"
+            app:resize_mode="fit"
+            android:visibility="gone"/>
+
+        <FrameLayout
+            android:id="@+id/fl_text_status"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/gradient_brand"
+            android:visibility="gone">
+            <TextView
+                android:id="@+id/tv_text_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:padding="32dp"
+                android:textColor="@color/white"
+                android:textSize="28sp"
+                android:textStyle="bold"
+                android:gravity="center"/>
+        </FrameLayout>
+    </FrameLayout>
+
+    <!-- Tap zones: left = previous, right = next, hold (long press) = pause -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@drawable/gradient_brand"
-        android:visibility="gone">
-        <TextView
-            android:id="@+id/tv_text_status"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:padding="32dp"
-            android:textColor="@color/white"
-            android:textSize="28sp"
-            android:textStyle="bold"
-            android:gravity="center"/>
-    </FrameLayout>
-    <ProgressBar
-        android:id="@+id/progress_status"
-        style="?android:attr/progressBarStyleHorizontal"
+        android:orientation="horizontal">
+        <View
+            android:id="@+id/zone_prev"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@android:color/transparent"
+            android:contentDescription="Previous"/>
+        <View
+            android:id="@+id/zone_next"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="2"
+            android:background="@android:color/transparent"
+            android:contentDescription="Next"/>
+    </LinearLayout>
+
+    <!-- Top scrim for legibility of progress + header -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:layout_gravity="top"
+        android:background="@drawable/status_viewer_topbar_scrim"/>
+
+    <!-- Segmented progress bar at top -->
+    <LinearLayout
+        android:id="@+id/progress_container"
         android:layout_width="match_parent"
         android:layout_height="3dp"
         android:layout_gravity="top"
-        android:max="100"
-        android:progress="0"/>
+        android:layout_marginTop="10dp"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
+        android:orientation="horizontal"
+        android:weightSum="1"/>
+
+    <!-- Owner header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="12dp"
-        android:gravity="center_vertical"
-        android:layout_marginTop="6dp">
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="20dp"
+        android:paddingBottom="12dp"
+        android:layout_marginTop="14dp"
+        android:gravity="center_vertical">
         <de.hdodenhof.circleimageview.CircleImageView
             android:id="@+id/iv_owner"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:src="@drawable/ic_person"
-            android:background="@color/surface_input"/>
-        <TextView
-            android:id="@+id/tv_owner"
-            android:layout_width="wrap_content"
+            android:background="@color/surface_input"
+            app:civ_border_width="1dp"
+            app:civ_border_color="#33FFFFFF"/>
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:textColor="@color/white"
-            android:textStyle="bold"
-            android:layout_marginStart="10dp"/>
-        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1"/>
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginStart="10dp">
+            <TextView
+                android:id="@+id/tv_owner"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/white"
+                android:textStyle="bold"
+                android:textSize="15sp"/>
+            <TextView
+                android:id="@+id/tv_owner_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#CCFFFFFF"
+                android:textSize="11sp"/>
+        </LinearLayout>
         <ImageButton
             android:id="@+id/btn_close_status"
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:src="@drawable/ic_back"
             android:tint="@color/white"
+            android:contentDescription="Close"
             android:background="?attr/selectableItemBackgroundBorderless"/>
+    </LinearLayout>
+
+    <!-- Bottom scrim -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="140dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/status_viewer_bottom_scrim"/>
+
+    <!-- Reply input + send button (UI only) -->
+    <LinearLayout
+        android:id="@+id/reply_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="20dp">
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/reply_input_bg">
+            <EditText
+                android:id="@+id/et_reply"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Reply..."
+                android:textColorHint="#99FFFFFF"
+                android:textColor="#FFFFFFFF"
+                android:textSize="15sp"
+                android:background="@android:color/transparent"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp"
+                android:maxLines="3"
+                android:inputType="textMultiLine|textCapSentences"
+                android:imeOptions="actionSend"/>
+        </FrameLayout>
+        <ImageButton
+            android:id="@+id/btn_send_reply"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="10dp"
+            android:src="@drawable/ic_send_fill"
+            android:tint="@color/white"
+            android:contentDescription="Send reply"
+            android:background="@drawable/send_button_bg"/>
     </LinearLayout>
 </FrameLayout>

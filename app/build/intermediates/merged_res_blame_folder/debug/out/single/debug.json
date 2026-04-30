@@ -68,6 +68,10 @@
         "source": "com.callx.app-main-52:/mipmap-anydpi-v26/ic_launcher.xml"
     },
     {
+        "merged": "com.callx.app-merged_res-50:/anim_slide_down_out.xml.flat",
+        "source": "com.callx.app-main-52:/anim/slide_down_out.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/drawable_ic_audio.xml.flat",
         "source": "com.callx.app-main-52:/drawable/ic_audio.xml"
     },
@@ -110,6 +114,10 @@
     {
         "merged": "com.callx.app-merged_res-50:/layout_fragment_status.xml.flat",
         "source": "com.callx.app-main-52:/layout/fragment_status.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_status_viewer_bottom_scrim.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/status_viewer_bottom_scrim.xml"
     },
     {
         "merged": "com.callx.app-merged_res-50:/drawable_ic_person.xml.flat",
@@ -160,6 +168,14 @@
         "source": "com.callx.app-main-52:/layout/item_status.xml"
     },
     {
+        "merged": "com.callx.app-merged_res-50:/drawable_progress_segment_fill.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/progress_segment_fill.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_status_card_bg.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/status_card_bg.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/menu_chat_menu.xml.flat",
         "source": "com.callx.app-main-52:/menu/chat_menu.xml"
     },
@@ -180,8 +196,16 @@
         "source": "com.callx.app-main-52:/drawable/ic_send_fill.xml"
     },
     {
+        "merged": "com.callx.app-merged_res-50:/drawable_reply_input_bg.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/reply_input_bg.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/layout_activity_status_viewer.xml.flat",
         "source": "com.callx.app-main-52:/layout/activity_status_viewer.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/anim_scale_up.xml.flat",
+        "source": "com.callx.app-main-52:/anim/scale_up.xml"
     },
     {
         "merged": "com.callx.app-merged_res-50:/drawable_ic_person_add.xml.flat",
@@ -236,16 +260,32 @@
         "source": "com.callx.app-main-52:/layout/item_chat.xml"
     },
     {
+        "merged": "com.callx.app-merged_res-50:/drawable_status_gradient_overlay.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/status_gradient_overlay.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/layout_activity_search.xml.flat",
         "source": "com.callx.app-main-52:/layout/activity_search.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/anim_slide_up_in.xml.flat",
+        "source": "com.callx.app-main-52:/anim/slide_up_in.xml"
     },
     {
         "merged": "com.callx.app-merged_res-50:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
         "source": "com.callx.app-main-52:/mipmap-anydpi-v26/ic_launcher_round.xml"
     },
     {
+        "merged": "com.callx.app-merged_res-50:/anim_scale_down.xml.flat",
+        "source": "com.callx.app-main-52:/anim/scale_down.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/drawable_bg_circle_white.xml.flat",
         "source": "com.callx.app-main-52:/drawable/bg_circle_white.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_status_card_placeholder.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/status_card_placeholder.xml"
     },
     {
         "merged": "com.callx.app-merged_res-50:/xml_network_security_config.xml.flat",
@@ -260,6 +300,10 @@
         "source": "com.callx.app-main-52:/drawable/circle_status_unseen.xml"
     },
     {
+        "merged": "com.callx.app-merged_res-50:/drawable_status_viewer_topbar_scrim.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/status_viewer_topbar_scrim.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/drawable_bubble_sent.xml.flat",
         "source": "com.callx.app-main-52:/drawable/bubble_sent.xml"
     },
@@ -268,8 +312,16 @@
         "source": "com.callx.app-main-52:/drawable/gradient_brand.xml"
     },
     {
+        "merged": "com.callx.app-merged_res-50:/drawable_progress_segment_bg.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/progress_segment_bg.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/drawable_bg_unread_badge.xml.flat",
         "source": "com.callx.app-main-52:/drawable/bg_unread_badge.xml"
+    },
+    {
+        "merged": "com.callx.app-merged_res-50:/drawable_send_button_bg.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/send_button_bg.xml"
     },
     {
         "merged": "com.callx.app-merged_res-50:/drawable_ic_attach.xml.flat",
