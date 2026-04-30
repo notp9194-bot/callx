@@ -537,6 +537,154 @@ jobs:
           </shape>
           ENDOFFILE
 
+          # ===== Status feature drawables =====
+          cat > app/src/main/res/drawable/status_card_bg.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <solid android:color="#1F2937"/>
+              <corners android:radius="18dp"/>
+          </shape>
+          ENDOFFILE
+
+          cat > app/src/main/res/drawable/status_card_placeholder.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <gradient
+                  android:type="linear"
+                  android:angle="135"
+                  android:startColor="#5B5BF6"
+                  android:endColor="#9333EA"/>
+              <corners android:radius="18dp"/>
+          </shape>
+          ENDOFFILE
+
+          cat > app/src/main/res/drawable/status_gradient_overlay.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <gradient
+                  android:type="linear"
+                  android:angle="90"
+                  android:startColor="#E6000000"
+                  android:centerColor="#66000000"
+                  android:endColor="#00000000"/>
+              <corners android:radius="18dp"/>
+          </shape>
+          ENDOFFILE
+
+          cat > app/src/main/res/drawable/progress_segment_bg.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <solid android:color="#33FFFFFF"/>
+              <corners android:radius="2dp"/>
+          </shape>
+          ENDOFFILE
+
+          cat > app/src/main/res/drawable/progress_segment_fill.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+              <item android:id="@android:id/background">
+                  <shape>
+                      <solid android:color="#33FFFFFF"/>
+                      <corners android:radius="2dp"/>
+                  </shape>
+              </item>
+              <item android:id="@android:id/progress">
+                  <clip>
+                      <shape>
+                          <solid android:color="#FFFFFFFF"/>
+                          <corners android:radius="2dp"/>
+                      </shape>
+                  </clip>
+              </item>
+          </layer-list>
+          ENDOFFILE
+
+          cat > app/src/main/res/drawable/reply_input_bg.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <solid android:color="#1AFFFFFF"/>
+              <stroke android:width="1dp" android:color="#33FFFFFF"/>
+              <corners android:radius="28dp"/>
+          </shape>
+          ENDOFFILE
+
+          cat > app/src/main/res/drawable/send_button_bg.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+              <solid android:color="@color/brand_accent"/>
+          </shape>
+          ENDOFFILE
+
+          cat > app/src/main/res/drawable/status_viewer_topbar_scrim.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <gradient
+                  android:type="linear"
+                  android:angle="270"
+                  android:startColor="#B3000000"
+                  android:endColor="#00000000"/>
+          </shape>
+          ENDOFFILE
+
+          cat > app/src/main/res/drawable/status_viewer_bottom_scrim.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <gradient
+                  android:type="linear"
+                  android:angle="90"
+                  android:startColor="#B3000000"
+                  android:endColor="#00000000"/>
+          </shape>
+          ENDOFFILE
+
+          # ===== Status item card scale animations =====
+          mkdir -p app/src/main/res/anim
+          cat > app/src/main/res/anim/scale_down.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <set xmlns:android="http://schemas.android.com/apk/res/android"
+              android:fillAfter="true">
+              <scale
+                  android:fromXScale="1.0" android:toXScale="0.95"
+                  android:fromYScale="1.0" android:toYScale="0.95"
+                  android:pivotX="50%" android:pivotY="50%"
+                  android:duration="120"/>
+          </set>
+          ENDOFFILE
+
+          cat > app/src/main/res/anim/scale_up.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <set xmlns:android="http://schemas.android.com/apk/res/android"
+              android:fillAfter="true">
+              <scale
+                  android:fromXScale="0.95" android:toXScale="1.0"
+                  android:fromYScale="0.95" android:toYScale="1.0"
+                  android:pivotX="50%" android:pivotY="50%"
+                  android:duration="160"/>
+          </set>
+          ENDOFFILE
+
+          cat > app/src/main/res/anim/slide_up_in.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <set xmlns:android="http://schemas.android.com/apk/res/android"
+              android:interpolator="@android:interpolator/decelerate_quad">
+              <translate
+                  android:fromYDelta="100%p" android:toYDelta="0"
+                  android:duration="240"/>
+              <alpha android:fromAlpha="0" android:toAlpha="1" android:duration="240"/>
+          </set>
+          ENDOFFILE
+
+          cat > app/src/main/res/anim/slide_down_out.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <set xmlns:android="http://schemas.android.com/apk/res/android"
+              android:interpolator="@android:interpolator/accelerate_quad">
+              <translate
+                  android:fromYDelta="0" android:toYDelta="100%p"
+                  android:duration="220"/>
+              <alpha android:fromAlpha="1" android:toAlpha="0" android:duration="220"/>
+          </set>
+          ENDOFFILE
+
           cat > app/src/main/res/drawable/card_rounded.xml << 'ENDOFFILE'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
@@ -1952,16 +2100,95 @@ jobs:
           cat > app/src/main/res/layout/fragment_status.xml << 'ENDOFFILE'
           <?xml version="1.0" encoding="utf-8"?>
           <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:app="http://schemas.android.com/apk/res-auto"
               android:layout_width="match_parent"
               android:layout_height="match_parent"
               android:background="@color/surface_bg">
-              <androidx.recyclerview.widget.RecyclerView
-                  android:id="@+id/rv_status"
+
+              <androidx.core.widget.NestedScrollView
                   android:layout_width="match_parent"
-                  android:layout_height="match_parent"/>
+                  android:layout_height="match_parent"
+                  android:fillViewport="true"
+                  android:overScrollMode="never">
+
+                  <LinearLayout
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:orientation="vertical"
+                      android:paddingBottom="100dp">
+
+                      <!-- Section header: Recent updates (horizontal cards) -->
+                      <LinearLayout
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:orientation="horizontal"
+                          android:gravity="center_vertical"
+                          android:paddingStart="20dp"
+                          android:paddingEnd="20dp"
+                          android:paddingTop="20dp"
+                          android:paddingBottom="12dp">
+                          <TextView
+                              android:layout_width="0dp"
+                              android:layout_height="wrap_content"
+                              android:layout_weight="1"
+                              android:text="Recent updates"
+                              android:textColor="?android:attr/textColorPrimary"
+                              android:textSize="20sp"
+                              android:textStyle="bold"/>
+                          <TextView
+                              android:id="@+id/tv_status_count"
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:textColor="@color/text_secondary"
+                              android:textSize="12sp"/>
+                      </LinearLayout>
+
+                      <!-- Horizontal RecyclerView of status cards -->
+                      <androidx.recyclerview.widget.RecyclerView
+                          android:id="@+id/rv_status"
+                          android:layout_width="match_parent"
+                          android:layout_height="240dp"
+                          android:clipToPadding="false"
+                          android:paddingStart="14dp"
+                          android:paddingEnd="14dp"
+                          android:overScrollMode="never"/>
+
+                      <!-- Empty state -->
+                      <LinearLayout
+                          android:id="@+id/empty_status"
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:orientation="vertical"
+                          android:gravity="center"
+                          android:paddingTop="60dp"
+                          android:paddingBottom="60dp"
+                          android:visibility="gone">
+                          <ImageView
+                              android:layout_width="64dp"
+                              android:layout_height="64dp"
+                              android:src="@drawable/ic_status_notification"
+                              android:alpha="0.4"
+                              android:contentDescription="No updates"/>
+                          <TextView
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:text="No status updates yet"
+                              android:textColor="@color/text_secondary"
+                              android:textSize="15sp"
+                              android:layout_marginTop="14dp"/>
+                          <TextView
+                              android:layout_width="wrap_content"
+                              android:layout_height="wrap_content"
+                              android:text="Tap the camera to share your moment"
+                              android:textColor="@color/text_muted"
+                              android:textSize="12sp"
+                              android:layout_marginTop="4dp"/>
+                      </LinearLayout>
+                  </LinearLayout>
+              </androidx.core.widget.NestedScrollView>
+
               <com.google.android.material.floatingactionbutton.FloatingActionButton
                   android:id="@+id/fab_new_status"
-                  xmlns:app="http://schemas.android.com/apk/res-auto"
                   android:layout_width="wrap_content"
                   android:layout_height="wrap_content"
                   android:layout_gravity="bottom|end"
@@ -2269,53 +2496,95 @@ jobs:
           </androidx.cardview.widget.CardView>
           ENDOFFILE
 
-          # item_status.xml — story preview (avatar with ring)
+          # item_status.xml — modern story card (rounded, bg image, ring avatar, gradient, username)
           cat > app/src/main/res/layout/item_status.xml << 'ENDOFFILE'
           <?xml version="1.0" encoding="utf-8"?>
-          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-              android:layout_width="match_parent"
-              android:layout_height="wrap_content"
-              android:orientation="horizontal"
-              android:padding="14dp"
-              android:gravity="center_vertical"
-              android:background="?attr/selectableItemBackground">
+          <androidx.cardview.widget.CardView
+              xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:app="http://schemas.android.com/apk/res-auto"
+              android:id="@+id/card_status"
+              android:layout_width="140dp"
+              android:layout_height="220dp"
+              android:layout_marginStart="6dp"
+              android:layout_marginEnd="6dp"
+              android:layout_marginTop="4dp"
+              android:layout_marginBottom="4dp"
+              app:cardCornerRadius="18dp"
+              app:cardElevation="6dp"
+              app:cardBackgroundColor="#1F2937"
+              android:foreground="?attr/selectableItemBackground"
+              android:clickable="true"
+              android:focusable="true">
               <FrameLayout
-                  android:layout_width="60dp"
-                  android:layout_height="60dp">
-                  <View
-                      android:id="@+id/ring"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent">
+
+                  <!-- Background preview (status media or placeholder) -->
+                  <ImageView
+                      android:id="@+id/iv_bg"
                       android:layout_width="match_parent"
                       android:layout_height="match_parent"
-                      android:background="@drawable/circle_status_unseen"/>
-                  <de.hdodenhof.circleimageview.CircleImageView
-                      android:id="@+id/iv_avatar"
-                      android:layout_width="50dp"
-                      android:layout_height="50dp"
-                      android:layout_gravity="center"
-                      android:src="@drawable/ic_person"
-                      android:background="@color/surface_input"/>
+                      android:scaleType="centerCrop"
+                      android:src="@drawable/status_card_placeholder"
+                      android:contentDescription="Status preview"/>
+
+                  <!-- Bottom dark gradient overlay for text legibility -->
+                  <View
+                      android:layout_width="match_parent"
+                      android:layout_height="match_parent"
+                      android:background="@drawable/status_gradient_overlay"/>
+
+                  <!-- Top-left circular profile image with colored ring -->
+                  <FrameLayout
+                      android:layout_width="46dp"
+                      android:layout_height="46dp"
+                      android:layout_gravity="top|start"
+                      android:layout_marginStart="10dp"
+                      android:layout_marginTop="10dp">
+                      <View
+                          android:id="@+id/ring"
+                          android:layout_width="match_parent"
+                          android:layout_height="match_parent"
+                          android:background="@drawable/circle_status_unseen"/>
+                      <de.hdodenhof.circleimageview.CircleImageView
+                          android:id="@+id/iv_avatar"
+                          android:layout_width="38dp"
+                          android:layout_height="38dp"
+                          android:layout_gravity="center"
+                          android:src="@drawable/ic_person"
+                          app:civ_border_width="2dp"
+                          app:civ_border_color="#1F2937"
+                          android:background="@color/surface_input"/>
+                  </FrameLayout>
+
+                  <!-- Bottom: username + time -->
+                  <LinearLayout
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:layout_gravity="bottom|start"
+                      android:orientation="vertical"
+                      android:padding="12dp">
+                      <TextView
+                          android:id="@+id/tv_name"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:textColor="#FFFFFF"
+                          android:textStyle="bold"
+                          android:textSize="14sp"
+                          android:maxLines="1"
+                          android:ellipsize="end"
+                          android:shadowColor="#80000000"
+                          android:shadowDx="0" android:shadowDy="1" android:shadowRadius="2"/>
+                      <TextView
+                          android:id="@+id/tv_time"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:textColor="#CCFFFFFF"
+                          android:textSize="11sp"
+                          android:layout_marginTop="2dp"/>
+                  </LinearLayout>
               </FrameLayout>
-              <LinearLayout
-                  android:layout_width="0dp"
-                  android:layout_height="wrap_content"
-                  android:layout_weight="1"
-                  android:orientation="vertical"
-                  android:layout_marginStart="14dp">
-                  <TextView
-                      android:id="@+id/tv_name"
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
-                      android:textStyle="bold"
-                      android:textColor="?android:attr/textColorPrimary"
-                      android:textSize="16sp"/>
-                  <TextView
-                      android:id="@+id/tv_time"
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
-                      android:textColor="@color/text_secondary"
-                      android:textSize="13sp"/>
-              </LinearLayout>
-          </LinearLayout>
+          </androidx.cardview.widget.CardView>
           ENDOFFILE
 
           # item_call_history.xml
@@ -2644,77 +2913,196 @@ jobs:
           </FrameLayout>
           ENDOFFILE
 
-          # activity_status_viewer.xml
+          # activity_status_viewer.xml — gesture viewer with segmented progress + reply box
           cat > app/src/main/res/layout/activity_status_viewer.xml << 'ENDOFFILE'
           <?xml version="1.0" encoding="utf-8"?>
           <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:app="http://schemas.android.com/apk/res-auto"
+              android:id="@+id/root_viewer"
               android:layout_width="match_parent"
               android:layout_height="match_parent"
               android:background="@color/black">
-              <ImageView
-                  android:id="@+id/iv_status"
-                  android:layout_width="match_parent"
-                  android:layout_height="match_parent"
-                  android:scaleType="centerCrop"
-                  android:visibility="gone"/>
-              <androidx.media3.ui.PlayerView
-                  android:id="@+id/player"
-                  android:layout_width="match_parent"
-                  android:layout_height="match_parent"
-                  android:visibility="gone"/>
+
+              <!-- Media container (fades on transition) -->
               <FrameLayout
-                  android:id="@+id/fl_text_status"
+                  android:id="@+id/fl_media"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent">
+
+                  <ImageView
+                      android:id="@+id/iv_status"
+                      android:layout_width="match_parent"
+                      android:layout_height="match_parent"
+                      android:scaleType="fitCenter"
+                      android:visibility="gone"
+                      android:contentDescription="Status image"/>
+
+                  <androidx.media3.ui.PlayerView
+                      android:id="@+id/player"
+                      android:layout_width="match_parent"
+                      android:layout_height="match_parent"
+                      app:use_controller="false"
+                      app:resize_mode="fit"
+                      android:visibility="gone"/>
+
+                  <FrameLayout
+                      android:id="@+id/fl_text_status"
+                      android:layout_width="match_parent"
+                      android:layout_height="match_parent"
+                      android:background="@drawable/gradient_brand"
+                      android:visibility="gone">
+                      <TextView
+                          android:id="@+id/tv_text_status"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:layout_gravity="center"
+                          android:padding="32dp"
+                          android:textColor="@color/white"
+                          android:textSize="28sp"
+                          android:textStyle="bold"
+                          android:gravity="center"/>
+                  </FrameLayout>
+              </FrameLayout>
+
+              <!-- Tap zones: left = previous, right = next, hold (long press) = pause -->
+              <LinearLayout
                   android:layout_width="match_parent"
                   android:layout_height="match_parent"
-                  android:background="@drawable/gradient_brand"
-                  android:visibility="gone">
-                  <TextView
-                      android:id="@+id/tv_text_status"
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
-                      android:layout_gravity="center"
-                      android:padding="32dp"
-                      android:textColor="@color/white"
-                      android:textSize="28sp"
-                      android:textStyle="bold"
-                      android:gravity="center"/>
-              </FrameLayout>
-              <ProgressBar
-                  android:id="@+id/progress_status"
-                  style="?android:attr/progressBarStyleHorizontal"
+                  android:orientation="horizontal">
+                  <View
+                      android:id="@+id/zone_prev"
+                      android:layout_width="0dp"
+                      android:layout_height="match_parent"
+                      android:layout_weight="1"
+                      android:background="@android:color/transparent"
+                      android:contentDescription="Previous"/>
+                  <View
+                      android:id="@+id/zone_next"
+                      android:layout_width="0dp"
+                      android:layout_height="match_parent"
+                      android:layout_weight="2"
+                      android:background="@android:color/transparent"
+                      android:contentDescription="Next"/>
+              </LinearLayout>
+
+              <!-- Top scrim for legibility of progress + header -->
+              <View
+                  android:layout_width="match_parent"
+                  android:layout_height="120dp"
+                  android:layout_gravity="top"
+                  android:background="@drawable/status_viewer_topbar_scrim"/>
+
+              <!-- Segmented progress bar at top -->
+              <LinearLayout
+                  android:id="@+id/progress_container"
                   android:layout_width="match_parent"
                   android:layout_height="3dp"
                   android:layout_gravity="top"
-                  android:max="100"
-                  android:progress="0"/>
+                  android:layout_marginTop="10dp"
+                  android:layout_marginStart="10dp"
+                  android:layout_marginEnd="10dp"
+                  android:orientation="horizontal"
+                  android:weightSum="1"/>
+
+              <!-- Owner header -->
               <LinearLayout
                   android:layout_width="match_parent"
                   android:layout_height="wrap_content"
                   android:orientation="horizontal"
-                  android:padding="12dp"
-                  android:gravity="center_vertical"
-                  android:layout_marginTop="6dp">
+                  android:paddingStart="12dp"
+                  android:paddingEnd="12dp"
+                  android:paddingTop="20dp"
+                  android:paddingBottom="12dp"
+                  android:layout_marginTop="14dp"
+                  android:gravity="center_vertical">
                   <de.hdodenhof.circleimageview.CircleImageView
                       android:id="@+id/iv_owner"
-                      android:layout_width="36dp"
-                      android:layout_height="36dp"
+                      android:layout_width="38dp"
+                      android:layout_height="38dp"
                       android:src="@drawable/ic_person"
-                      android:background="@color/surface_input"/>
-                  <TextView
-                      android:id="@+id/tv_owner"
-                      android:layout_width="wrap_content"
+                      android:background="@color/surface_input"
+                      app:civ_border_width="1dp"
+                      app:civ_border_color="#33FFFFFF"/>
+                  <LinearLayout
+                      android:layout_width="0dp"
                       android:layout_height="wrap_content"
-                      android:textColor="@color/white"
-                      android:textStyle="bold"
-                      android:layout_marginStart="10dp"/>
-                  <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1"/>
+                      android:layout_weight="1"
+                      android:orientation="vertical"
+                      android:layout_marginStart="10dp">
+                      <TextView
+                          android:id="@+id/tv_owner"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:textColor="@color/white"
+                          android:textStyle="bold"
+                          android:textSize="15sp"/>
+                      <TextView
+                          android:id="@+id/tv_owner_time"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:textColor="#CCFFFFFF"
+                          android:textSize="11sp"/>
+                  </LinearLayout>
                   <ImageButton
                       android:id="@+id/btn_close_status"
                       android:layout_width="40dp"
                       android:layout_height="40dp"
                       android:src="@drawable/ic_back"
                       android:tint="@color/white"
+                      android:contentDescription="Close"
                       android:background="?attr/selectableItemBackgroundBorderless"/>
+              </LinearLayout>
+
+              <!-- Bottom scrim -->
+              <View
+                  android:layout_width="match_parent"
+                  android:layout_height="140dp"
+                  android:layout_gravity="bottom"
+                  android:background="@drawable/status_viewer_bottom_scrim"/>
+
+              <!-- Reply input + send button (UI only) -->
+              <LinearLayout
+                  android:id="@+id/reply_bar"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:layout_gravity="bottom"
+                  android:orientation="horizontal"
+                  android:gravity="center_vertical"
+                  android:paddingStart="12dp"
+                  android:paddingEnd="12dp"
+                  android:paddingTop="10dp"
+                  android:paddingBottom="20dp">
+                  <FrameLayout
+                      android:layout_width="0dp"
+                      android:layout_height="wrap_content"
+                      android:layout_weight="1"
+                      android:background="@drawable/reply_input_bg">
+                      <EditText
+                          android:id="@+id/et_reply"
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:hint="Reply..."
+                          android:textColorHint="#99FFFFFF"
+                          android:textColor="#FFFFFFFF"
+                          android:textSize="15sp"
+                          android:background="@android:color/transparent"
+                          android:paddingStart="20dp"
+                          android:paddingEnd="20dp"
+                          android:paddingTop="14dp"
+                          android:paddingBottom="14dp"
+                          android:maxLines="3"
+                          android:inputType="textMultiLine|textCapSentences"
+                          android:imeOptions="actionSend"/>
+                  </FrameLayout>
+                  <ImageButton
+                      android:id="@+id/btn_send_reply"
+                      android:layout_width="48dp"
+                      android:layout_height="48dp"
+                      android:layout_marginStart="10dp"
+                      android:src="@drawable/ic_send_fill"
+                      android:tint="@color/white"
+                      android:contentDescription="Send reply"
+                      android:background="@drawable/send_button_bg"/>
               </LinearLayout>
           </FrameLayout>
           ENDOFFILE
@@ -5200,34 +5588,128 @@ jobs:
           import android.os.Bundle;
           import android.os.Handler;
           import android.os.Looper;
+          import android.text.TextUtils;
+          import android.view.GestureDetector;
+          import android.view.MotionEvent;
           import android.view.View;
+          import android.view.ViewGroup;
+          import android.view.WindowManager;
+          import android.view.animation.AlphaAnimation;
+          import android.view.inputmethod.InputMethodManager;
+          import android.widget.LinearLayout;
+          import android.widget.ProgressBar;
+          import android.widget.Toast;
           import androidx.appcompat.app.AppCompatActivity;
+          import androidx.core.content.ContextCompat;
           import androidx.media3.common.MediaItem;
           import androidx.media3.exoplayer.ExoPlayer;
           import com.bumptech.glide.Glide;
+          import com.callx.app.R;
           import com.callx.app.databinding.ActivityStatusViewerBinding;
           import com.callx.app.models.StatusItem;
           import com.callx.app.utils.FirebaseUtils;
           import com.google.firebase.database.*;
+          import java.text.SimpleDateFormat;
           import java.util.ArrayList;
+          import java.util.Date;
           import java.util.List;
+          import java.util.Locale;
+
           public class StatusViewerActivity extends AppCompatActivity {
               private ActivityStatusViewerBinding binding;
               private final List<StatusItem> items = new ArrayList<>();
+              private final List<ProgressBar> segments = new ArrayList<>();
               private int idx = 0;
               private ExoPlayer player;
               private final Handler handler = new Handler(Looper.getMainLooper());
               private Runnable progressRunner;
+              private boolean paused = false;
+              private long elapsed = 0;
+              private long total = 5000;
+              private static final long STEP = 30;
+              private final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm", Locale.getDefault());
+
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+                  // Edge-to-edge dark experience
+                  getWindow().setFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                      WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
                   binding = ActivityStatusViewerBinding.inflate(getLayoutInflater());
                   setContentView(binding.getRoot());
                   String ownerUid = getIntent().getStringExtra("ownerUid");
                   if (ownerUid == null) { finish(); return; }
-                  binding.btnCloseStatus.setOnClickListener(v -> finish());
+                  binding.btnCloseStatus.setOnClickListener(v -> closeWithSlide());
+                  setupGestures();
+                  setupReply();
                   load(ownerUid);
               }
+
+              private void setupGestures() {
+                  // Tap right zone -> next
+                  binding.zoneNext.setOnClickListener(v -> nextStep());
+                  // Tap left zone -> previous
+                  binding.zonePrev.setOnClickListener(v -> prevStep());
+
+                  // Hold (long-press) -> pause; release -> resume.
+                  // We attach to root + zones via touch listener.
+                  View.OnTouchListener holdListener = (v, e) -> {
+                      switch (e.getAction()) {
+                          case MotionEvent.ACTION_DOWN:
+                              handler.postDelayed(pauseRun, 220); // small delay to differentiate tap vs hold
+                              return false;
+                          case MotionEvent.ACTION_UP:
+                          case MotionEvent.ACTION_CANCEL:
+                              handler.removeCallbacks(pauseRun);
+                              if (paused) resume();
+                              return false;
+                      }
+                      return false;
+                  };
+                  binding.zoneNext.setOnTouchListener(holdListener);
+                  binding.zonePrev.setOnTouchListener(holdListener);
+
+                  // Swipe down -> close (intercepted in dispatchTouchEvent below)
+                  swipeDetector = new GestureDetector(this,
+                      new GestureDetector.SimpleOnGestureListener() {
+                          @Override public boolean onFling(MotionEvent e1, MotionEvent e2,
+                                                           float vX, float vY) {
+                              if (e1 == null || e2 == null) return false;
+                              float dy = e2.getY() - e1.getY();
+                              if (dy > 180 && Math.abs(vY) > 600) {
+                                  closeWithSlide();
+                                  return true;
+                              }
+                              return false;
+                          }
+                      });
+              }
+
+              private GestureDetector swipeDetector;
+
+              @Override
+              public boolean dispatchTouchEvent(MotionEvent ev) {
+                  if (swipeDetector != null) swipeDetector.onTouchEvent(ev);
+                  return super.dispatchTouchEvent(ev);
+              }
+
+              private final Runnable pauseRun = () -> { paused = true; pause(); };
+
+              private void setupReply() {
+                  binding.btnSendReply.setOnClickListener(v -> {
+                      String txt = binding.etReply.getText() == null ? "" : binding.etReply.getText().toString().trim();
+                      if (TextUtils.isEmpty(txt)) return;
+                      Toast.makeText(this, "Reply sent", Toast.LENGTH_SHORT).show();
+                      binding.etReply.setText("");
+                      InputMethodManager imm = (InputMethodManager)
+                          getSystemService(INPUT_METHOD_SERVICE);
+                      if (imm != null) imm.hideSoftInputFromWindow(binding.etReply.getWindowToken(), 0);
+                  });
+                  binding.etReply.setOnFocusChangeListener((v, has) -> {
+                      if (has) pause(); else resume();
+                  });
+              }
+
               private void load(String ownerUid) {
                   FirebaseUtils.getStatusRef().child(ownerUid)
                       .addListenerForSingleValueEvent(new ValueEventListener() {
@@ -5244,21 +5726,55 @@ jobs:
                               binding.tvOwner.setText(first.ownerName == null ? "Status" : first.ownerName);
                               if (first.ownerPhoto != null && !first.ownerPhoto.isEmpty()) {
                                   Glide.with(StatusViewerActivity.this).load(first.ownerPhoto)
-                                      .into(binding.ivOwner);
+                                      .circleCrop().into(binding.ivOwner);
                               }
+                              buildSegments();
                               showCurrent();
                           }
                           @Override public void onCancelled(DatabaseError e) { finish(); }
                       });
               }
+
+              private void buildSegments() {
+                  binding.progressContainer.removeAllViews();
+                  segments.clear();
+                  int n = items.size();
+                  for (int i = 0; i < n; i++) {
+                      ProgressBar p = new ProgressBar(this, null,
+                          android.R.attr.progressBarStyleHorizontal);
+                      p.setMax(1000);
+                      p.setProgress(0);
+                      p.setProgressDrawable(
+                          ContextCompat.getDrawable(this, R.drawable.progress_segment_fill));
+                      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                          0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+                      lp.setMarginStart(i == 0 ? 0 : (int)(3 * getResources().getDisplayMetrics().density));
+                      p.setLayoutParams(lp);
+                      binding.progressContainer.addView(p);
+                      segments.add(p);
+                  }
+              }
+
               private void showCurrent() {
-                  if (idx >= items.size()) { finish(); return; }
+                  if (idx >= items.size()) { closeWithSlide(); return; }
+                  // mark previous as full
+                  for (int i = 0; i < idx && i < segments.size(); i++) segments.get(i).setProgress(1000);
+                  // reset upcoming
+                  for (int i = idx + 1; i < segments.size(); i++) segments.get(i).setProgress(0);
+
                   StatusItem s = items.get(idx);
+                  binding.tvOwnerTime.setText(s.timestamp != null ? fmt.format(new Date(s.timestamp)) : "");
                   hideAll();
+                  // Fade-in transition for the media container
+                  AlphaAnimation fade = new AlphaAnimation(0f, 1f);
+                  fade.setDuration(220);
+                  binding.flMedia.startAnimation(fade);
+
                   if ("text".equals(s.type)) {
                       binding.flTextStatus.setVisibility(View.VISIBLE);
                       binding.tvTextStatus.setText(s.text == null ? "" : s.text);
-                      startProgress(5000);
+                      total = 5000;
+                      startProgress();
                   } else if ("video".equals(s.type) && s.mediaUrl != null) {
                       binding.player.setVisibility(View.VISIBLE);
                       if (player != null) player.release();
@@ -5267,47 +5783,83 @@ jobs:
                       player.setMediaItem(MediaItem.fromUri(Uri.parse(s.mediaUrl)));
                       player.prepare();
                       player.setPlayWhenReady(true);
-                      startProgress(15000);
+                      total = 15000;
+                      startProgress();
                   } else if ("image".equals(s.type) && s.mediaUrl != null) {
                       binding.ivStatus.setVisibility(View.VISIBLE);
                       Glide.with(this).load(s.mediaUrl).into(binding.ivStatus);
-                      startProgress(5000);
+                      total = 5000;
+                      startProgress();
                   } else {
-                      next();
+                      nextStep();
                   }
               }
+
               private void hideAll() {
                   binding.flTextStatus.setVisibility(View.GONE);
                   binding.player.setVisibility(View.GONE);
                   binding.ivStatus.setVisibility(View.GONE);
               }
-              private void startProgress(long durationMs) {
+
+              private void startProgress() {
                   if (progressRunner != null) handler.removeCallbacks(progressRunner);
-                  binding.progressStatus.setProgress(0);
-                  long step = 50;
-                  long total = durationMs;
+                  elapsed = 0;
+                  paused = false;
+                  if (idx < segments.size()) segments.get(idx).setProgress(0);
                   progressRunner = new Runnable() {
-                      long elapsed = 0;
                       @Override public void run() {
-                          elapsed += step;
-                          int prog = (int)((elapsed * 100L) / total);
-                          binding.progressStatus.setProgress(Math.min(100, prog));
-                          if (elapsed >= total) { next(); }
-                          else handler.postDelayed(this, step);
+                          if (paused) return;
+                          elapsed += STEP;
+                          int prog = (int)((elapsed * 1000L) / total);
+                          if (idx < segments.size()) {
+                              segments.get(idx).setProgress(Math.min(1000, prog));
+                          }
+                          if (elapsed >= total) { nextStep(); }
+                          else handler.postDelayed(this, STEP);
                       }
                   };
-                  handler.postDelayed(progressRunner, step);
+                  handler.postDelayed(progressRunner, STEP);
               }
-              private void next() {
+
+              private void pause() {
+                  paused = true;
+                  if (player != null) player.setPlayWhenReady(false);
+              }
+              private void resume() {
+                  if (!paused) return;
+                  paused = false;
+                  if (player != null) player.setPlayWhenReady(true);
+                  handler.postDelayed(progressRunner, STEP);
+              }
+
+              private void nextStep() {
                   if (player != null) { player.release(); player = null; }
                   if (progressRunner != null) handler.removeCallbacks(progressRunner);
                   idx++;
                   showCurrent();
               }
+              private void prevStep() {
+                  if (player != null) { player.release(); player = null; }
+                  if (progressRunner != null) handler.removeCallbacks(progressRunner);
+                  if (idx > 0) {
+                      idx--;
+                      if (idx < segments.size()) segments.get(idx).setProgress(0);
+                  }
+                  showCurrent();
+              }
+
+              private void closeWithSlide() {
+                  finish();
+                  overridePendingTransition(android.R.anim.fade_in, R.anim.slide_down_out);
+              }
+
+              @Override public void onBackPressed() { closeWithSlide(); }
+
               @Override
               protected void onDestroy() {
                   if (player != null) { player.release(); player = null; }
                   if (progressRunner != null) handler.removeCallbacks(progressRunner);
+                  handler.removeCallbacks(pauseRun);
                   super.onDestroy();
               }
           }
@@ -5988,9 +6540,13 @@ jobs:
 
           cat > app/src/main/java/com/callx/app/adapters/StatusListAdapter.java << 'ENDOFFILE'
           package com.callx.app.adapters;
+          import android.animation.AnimatorSet;
+          import android.animation.ObjectAnimator;
           import android.content.Context;
           import android.content.Intent;
           import android.view.*;
+          import android.view.animation.DecelerateInterpolator;
+          import android.widget.ImageView;
           import android.widget.TextView;
           import androidx.annotation.NonNull;
           import androidx.recyclerview.widget.RecyclerView;
@@ -6001,11 +6557,14 @@ jobs:
           import de.hdodenhof.circleimageview.CircleImageView;
           import java.text.SimpleDateFormat;
           import java.util.Date;
+          import java.util.HashSet;
           import java.util.List;
           import java.util.Locale;
+          import java.util.Set;
           public class StatusListAdapter extends RecyclerView.Adapter<StatusListAdapter.VH> {
               private final List<StatusItem> entries;
               private final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm", Locale.getDefault());
+              private final Set<String> seenUids = new HashSet<>();
               public StatusListAdapter(List<StatusItem> entries) { this.entries = entries; }
               @NonNull @Override
               public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
@@ -6018,24 +6577,75 @@ jobs:
                   Context ctx = h.itemView.getContext();
                   h.tvName.setText(s.ownerName == null ? "Status" : s.ownerName);
                   h.tvTime.setText(s.timestamp != null ? fmt.format(new Date(s.timestamp)) : "");
+
+                  // Profile avatar
                   if (s.ownerPhoto != null && !s.ownerPhoto.isEmpty()) {
-                      Glide.with(ctx).load(s.ownerPhoto).into(h.ivAvatar);
+                      Glide.with(ctx).load(s.ownerPhoto).circleCrop().into(h.ivAvatar);
                   } else h.ivAvatar.setImageResource(R.drawable.ic_person);
+
+                  // Background preview (status media if image, else placeholder gradient)
+                  if ("image".equals(s.type) && s.mediaUrl != null && !s.mediaUrl.isEmpty()) {
+                      Glide.with(ctx).load(s.mediaUrl).centerCrop().into(h.ivBg);
+                  } else if ("video".equals(s.type) && s.mediaUrl != null && !s.mediaUrl.isEmpty()) {
+                      Glide.with(ctx).load(s.mediaUrl).centerCrop().into(h.ivBg);
+                  } else {
+                      h.ivBg.setImageResource(R.drawable.status_card_placeholder);
+                  }
+
+                  // Ring color: green = unseen, grey = seen
+                  boolean seen = s.ownerUid != null && seenUids.contains(s.ownerUid);
+                  h.ring.setBackgroundResource(seen
+                      ? R.drawable.circle_status_seen
+                      : R.drawable.circle_status_unseen);
+
+                  // Card click: scale animation + open viewer
+                  h.itemView.setOnTouchListener((v, event) -> {
+                      switch (event.getAction()) {
+                          case MotionEvent.ACTION_DOWN:
+                              animateScale(v, 0.94f);
+                              break;
+                          case MotionEvent.ACTION_UP:
+                          case MotionEvent.ACTION_CANCEL:
+                              animateScale(v, 1.0f);
+                              break;
+                      }
+                      return false; // let click event pass
+                  });
                   h.itemView.setOnClickListener(v -> {
+                      if (s.ownerUid != null) seenUids.add(s.ownerUid);
+                      h.ring.setBackgroundResource(R.drawable.circle_status_seen);
                       Intent i = new Intent(ctx, StatusViewerActivity.class);
                       i.putExtra("ownerUid", s.ownerUid);
                       ctx.startActivity(i);
+                      if (ctx instanceof android.app.Activity) {
+                          ((android.app.Activity) ctx).overridePendingTransition(
+                              R.anim.slide_up_in, android.R.anim.fade_out);
+                      }
                   });
+              }
+              private void animateScale(View v, float to) {
+                  AnimatorSet set = new AnimatorSet();
+                  set.playTogether(
+                      ObjectAnimator.ofFloat(v, "scaleX", to),
+                      ObjectAnimator.ofFloat(v, "scaleY", to)
+                  );
+                  set.setDuration(140);
+                  set.setInterpolator(new DecelerateInterpolator());
+                  set.start();
               }
               @Override public int getItemCount() { return entries.size(); }
               static class VH extends RecyclerView.ViewHolder {
                   TextView tvName, tvTime;
                   CircleImageView ivAvatar;
+                  ImageView ivBg;
+                  View ring;
                   VH(View v) {
                       super(v);
-                      tvName = v.findViewById(R.id.tv_name);
-                      tvTime = v.findViewById(R.id.tv_time);
+                      tvName   = v.findViewById(R.id.tv_name);
+                      tvTime   = v.findViewById(R.id.tv_time);
                       ivAvatar = v.findViewById(R.id.iv_avatar);
+                      ivBg     = v.findViewById(R.id.iv_bg);
+                      ring     = v.findViewById(R.id.ring);
                   }
               }
           }
@@ -6670,6 +7280,7 @@ jobs:
           import android.content.Intent;
           import android.os.Bundle;
           import android.view.*;
+          import android.widget.TextView;
           import androidx.annotation.NonNull;
           import androidx.fragment.app.Fragment;
           import androidx.recyclerview.widget.LinearLayoutManager;
@@ -6688,13 +7299,19 @@ jobs:
           public class StatusFragment extends Fragment {
               private final List<StatusItem> statuses = new ArrayList<>();
               private StatusListAdapter adapter;
+              private View emptyView;
+              private TextView tvCount;
               @Override
               public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup parent, Bundle s) {
                   View v = inflater.inflate(R.layout.fragment_status, parent, false);
                   RecyclerView rv = v.findViewById(R.id.rv_status);
-                  rv.setLayoutManager(new LinearLayoutManager(getContext()));
+                  rv.setLayoutManager(new LinearLayoutManager(getContext(),
+                      LinearLayoutManager.HORIZONTAL, false));
+                  rv.setItemAnimator(new androidx.recyclerview.widget.DefaultItemAnimator());
                   adapter = new StatusListAdapter(statuses);
                   rv.setAdapter(adapter);
+                  emptyView = v.findViewById(R.id.empty_status);
+                  tvCount = v.findViewById(R.id.tv_status_count);
                   FloatingActionButton fab = v.findViewById(R.id.fab_new_status);
                   fab.setOnClickListener(x ->
                       startActivity(new Intent(getContext(), NewStatusActivity.class)));
@@ -6706,7 +7323,6 @@ jobs:
                       @Override public void onDataChange(DataSnapshot snap) {
                           statuses.clear();
                           long now = System.currentTimeMillis();
-                          // Group by ownerUid - keep latest per user
                           Map<String, StatusItem> latestByUser = new HashMap<>();
                           for (DataSnapshot user : snap.getChildren()) {
                               StatusItem latest = null;
@@ -6724,6 +7340,13 @@ jobs:
                           }
                           statuses.addAll(latestByUser.values());
                           adapter.notifyDataSetChanged();
+                          if (emptyView != null) {
+                              emptyView.setVisibility(statuses.isEmpty() ? View.VISIBLE : View.GONE);
+                          }
+                          if (tvCount != null) {
+                              int n = statuses.size();
+                              tvCount.setText(n == 0 ? "" : (n + (n == 1 ? " update" : " updates")));
+                          }
                       }
                       @Override public void onCancelled(DatabaseError e) {}
                   });
