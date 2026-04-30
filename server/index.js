@@ -72,20 +72,42 @@ app.post("/cloudinary/sign", (req, res) => {
 app.post("/notify", async (req, res) => {
   if (!firebaseReady)
     return res.status(503).json({ error: "Firebase not configured" });
-  const { toUid, fromUid, fromName, type, text } = req.body || {};
+  const {
+    toUid, fromUid, fromName, type, text,
+    chatId, messageId, mediaUrl
+  } = req.body || {};
   if (!toUid) return res.status(400).json({ error: "toUid required" });
   try {
     const snap = await admin.database().ref("users/" + toUid).once("value");
     const user = snap.val() || {};
     if (!user.fcmToken)
       return res.status(404).json({ error: "no token" });
+    // Lookup sender profile so the notification can show
+    // mobile, photo, online/offline state etc.
+    let fromMobile = "", fromPhoto = "", fromLastSeen = "0";
+    if (fromUid) {
+      try {
+        const fSnap = await admin.database()
+          .ref("users/" + fromUid).once("value");
+        const f = fSnap.val() || {};
+        fromMobile   = String(f.mobile || f.callxId || "");
+        fromPhoto    = String(f.photoUrl || "");
+        fromLastSeen = String(f.lastSeen || 0);
+      } catch (e) { /* best-effort */ }
+    }
     const message = {
       token: user.fcmToken,
       data: {
-        type:     String(type || "message"),
-        fromUid:  String(fromUid || ""),
-        fromName: String(fromName || ""),
-        text:     String(text || "")
+        type:         String(type || "message"),
+        fromUid:      String(fromUid || ""),
+        fromName:     String(fromName || ""),
+        fromMobile:   fromMobile,
+        fromPhoto:    fromPhoto,
+        fromLastSeen: fromLastSeen,
+        chatId:       String(chatId || ""),
+        messageId:    String(messageId || ""),
+        mediaUrl:     String(mediaUrl || ""),
+        text:         String(text || "")
       },
       android: { priority: "high" }
     };

@@ -83,6 +83,7 @@ public class ChatActivity extends AppCompatActivity {
                 boolean has = s.toString().trim().length() > 0;
                 binding.btnSend.setVisibility(has ? View.VISIBLE : View.GONE);
                 binding.btnMic.setVisibility(has ? View.GONE : View.VISIBLE);
+                if (has) maybeSendTypingPing();
             }
         });
     }
@@ -220,7 +221,17 @@ public class ChatActivity extends AppCompatActivity {
         FirebaseUtils.getContactsRef(partnerUid).child(currentUid)
             .updateChildren(partnerSide);
 
-        PushNotify.notifyUser(partnerUid, currentUid, currentName, "message", preview);
+        String mediaUrl = m.mediaUrl == null ? "" : m.mediaUrl;
+        PushNotify.notifyMessage(partnerUid, currentUid, currentName,
+            chatId, m.id, preview, "message", mediaUrl);
+    }
+    private long lastTypingPingAt = 0L;
+    private void maybeSendTypingPing() {
+        long now = System.currentTimeMillis();
+        if (now - lastTypingPingAt < 4000L) return;
+        lastTypingPingAt = now;
+        if (partnerUid == null || currentUid == null || chatId == null) return;
+        PushNotify.notifyTyping(partnerUid, currentUid, currentName, chatId);
     }
     @Override protected void onResume() {
         super.onResume();

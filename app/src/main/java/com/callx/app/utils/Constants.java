@@ -13,5 +13,17 @@ public class Constants {
     public static final String CHANNEL_REQUESTS = "callx_requests";
     public static final int HTTP_TIMEOUT_MS = 20000;
     public static final long STATUS_TTL_MS = 24L * 60 * 60 * 1000;
+    // Notification action intents (handled by NotificationActionReceiver)
+    public static final String ACTION_REPLY      = "com.callx.app.ACTION_REPLY";
+    public static final String ACTION_MARK_READ  = "com.callx.app.ACTION_MARK_READ";
+    public static final String ACTION_MUTE       = "com.callx.app.ACTION_MUTE";
+    public static final String ACTION_BLOCK      = "com.callx.app.ACTION_BLOCK";
+    public static final String EXTRA_CHAT_ID      = "extra_chat_id";
+    public static final String EXTRA_PARTNER_UID  = "extra_partner_uid";
+    public static final String EXTRA_PARTNER_NAME = "extra_partner_name";
+    public static final String EXTRA_NOTIF_ID     = "extra_notif_id";
+    public static final String KEY_TEXT_REPLY     = "key_text_reply";
+    // Online window — last seen within this many ms => Online
+    public static final long ONLINE_WINDOW_MS = 60_000L;
     private Constants() {}
 }
