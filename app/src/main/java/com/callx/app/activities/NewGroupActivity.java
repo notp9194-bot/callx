@@ -60,16 +60,25 @@ public class NewGroupActivity extends AppCompatActivity {
         DatabaseReference ref = FirebaseUtils.getGroupsRef().push();
         String groupId = ref.getKey();
         Map<String, Object> g = new HashMap<>();
-        g.put("id", groupId);
-        g.put("name", name);
-        g.put("createdBy", currentUid);
-        g.put("createdAt", System.currentTimeMillis());
-        g.put("lastMessage", "Group bana");
-        g.put("lastMessageAt", System.currentTimeMillis());
+        g.put("id",             groupId);
+        g.put("name",           name);
+        g.put("createdBy",      currentUid);
+        g.put("adminUid",       currentUid);   // creator = primary admin
+        g.put("createdAt",      System.currentTimeMillis());
+        g.put("lastMessage",    "Group bana");
+        g.put("lastSenderName", "");
+        g.put("lastMessageAt",  System.currentTimeMillis());
         Map<String, Boolean> members = new HashMap<>();
         members.put(currentUid, true);
         for (String uid : selected) members.put(uid, true);
         g.put("members", members);
+        Map<String, Boolean> admins = new HashMap<>();
+        admins.put(currentUid, true);
+        g.put("admins", admins);
+        // unread counts initialized at 0 for all members
+        Map<String, Object> unread = new HashMap<>();
+        for (String uid : members.keySet()) unread.put(uid, 0L);
+        g.put("unread", unread);
         ref.setValue(g).addOnSuccessListener(x -> {
             // Index for each member
             for (String uid : members.keySet()) {

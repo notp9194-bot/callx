@@ -38,6 +38,29 @@ public class GroupChatActivity extends AppCompatActivity {
     private final AudioRecorderHelper recorder = new AudioRecorderHelper();
     private boolean isRecording = false;
     private ActivityResultLauncher<String> imagePicker, videoPicker, audioPicker, filePicker;
+    // ---- Real-time header (online + typing) state ----
+    private DatabaseReference typingRef;     // groups/{gid}/typing
+    private DatabaseReference membersRef;    // groups/{gid}/members
+    private ValueEventListener typingListener, membersListener;
+    // memberUid -> ValueEventListener on users/{uid}/lastSeen
+    private final Map<String, ValueEventListener> presenceListeners = new HashMap<>();
+    private final Map<String, Long>    memberLastSeen = new HashMap<>();
+    private final Map<String, String>  memberNames    = new HashMap<>();
+    private final Map<String, String>  typingNames    = new HashMap<>(); // typing uid -> name
+    private int totalMembers = 0;
+    private boolean amTyping = false;
+    private final android.os.Handler typingStopHandler =
+        new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable typingStopRunnable = () -> setMyTyping(false);
+    private final android.os.Handler subtitleHandler =
+        new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable subtitleRefresh = new Runnable() {
+        @Override public void run() {
+            refreshSubtitle();
+            // Online/offline boundary slide karte rehta hai → har 30s recompute
+            subtitleHandler.postDelayed(this, 30_000L);
+        }
+    };
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -66,8 +89,18 @@ public class GroupChatActivity extends AppCompatActivity {
                 boolean has = s.toString().trim().length() > 0;
                 binding.btnSend.setVisibility(has ? View.VISIBLE : View.GONE);
                 binding.btnMic.setVisibility(has ? View.GONE : View.VISIBLE);
+                // Typing indicator — set true on input, auto-clear after 4s idle
+                if (has) {
+                    setMyTyping(true);
+                    typingStopHandler.removeCallbacks(typingStopRunnable);
+                    typingStopHandler.postDelayed(typingStopRunnable, 4000L);
+                } else {
+                    typingStopHandler.removeCallbacks(typingStopRunnable);
+                    setMyTyping(false);
+                }
             }
         });
+        setupRealtimeHeader();
         imagePicker = registerForActivityResult(
             new ActivityResultContracts.GetContent(),
             uri -> { if (uri != null) uploadAndSend(uri, "image", "image", null); });
@@ -172,11 +205,18 @@ public class GroupChatActivity extends AppCompatActivity {
         m.id = ref.getKey();
         ref.setValue(m);
         Map<String, Object> meta = new HashMap<>();
-        meta.put("lastMessage", currentName + ": " + preview);
-        meta.put("lastMessageAt", System.currentTimeMillis());
+        meta.put("lastMessage",     preview);
+        meta.put("lastSenderName",  currentName);
+        meta.put("lastMessageAt",   System.currentTimeMillis());
         FirebaseUtils.getGroupsRef().child(groupId).updateChildren(meta);
-        PushNotify.notifyGroup(groupId, currentUid, currentName,
-            "group_message", preview);
+        // Server fanout — sender ka apna photo cache se nikal ke bhejo,
+        // taaki receiver side notification me sender ka avatar dikhe.
+        String myPhoto = com.callx.app.CallxApp.getMyPhotoUrlCached();
+        String pushType = "text".equals(m.type) ? "group_message" : m.type;
+        PushNotify.notifyGroupRich(groupId, currentUid, currentName,
+            myPhoto == null ? "" : myPhoto,
+            m.id, pushType, preview,
+            m.mediaUrl == null ? "" : m.mediaUrl);
     }
     private void loadMessages() {
         FirebaseUtils.getGroupMessagesRef(groupId).orderByChild("timestamp")
@@ -195,5 +235,145 @@ public class GroupChatActivity extends AppCompatActivity {
                 @Override public void onChildMoved(DataSnapshot s, String p) {}
                 @Override public void onCancelled(DatabaseError e) {}
             });
+    }
+    // ===================================================================
+    // Real-time toolbar header — typing + online + member count (WhatsApp)
+    // ===================================================================
+    private void setupRealtimeHeader() {
+        typingRef  = FirebaseUtils.getGroupTypingRef(groupId);
+        membersRef = FirebaseUtils.getGroupMembersRef(groupId);
+
+        // Typing watcher — kaun-kaun type kar raha hai (mere alawa)
+        typingListener = new ValueEventListener() {
+            @Override public void onDataChange(DataSnapshot snap) {
+                typingNames.clear();
+                for (DataSnapshot c : snap.getChildren()) {
+                    String uid = c.getKey();
+                    if (uid == null || uid.equals(currentUid)) continue;
+                    Object v = c.getValue();
+                    String name = v == null ? "" : String.valueOf(v);
+                    if (name.isEmpty() || "true".equalsIgnoreCase(name)) {
+                        name = memberNames.containsKey(uid)
+                            ? memberNames.get(uid) : "Someone";
+                    }
+                    typingNames.put(uid, name);
+                }
+                refreshSubtitle();
+            }
+            @Override public void onCancelled(DatabaseError e) {}
+        };
+        typingRef.addValueEventListener(typingListener);
+
+        // Members watcher — list change pe presence subscriptions sync karo
+        membersListener = new ValueEventListener() {
+            @Override public void onDataChange(DataSnapshot snap) {
+                java.util.Set<String> latest = new java.util.HashSet<>();
+                for (DataSnapshot c : snap.getChildren()) {
+                    String uid = c.getKey();
+                    if (uid != null) latest.add(uid);
+                }
+                totalMembers = latest.size();
+                // Stale subscriptions hatao
+                java.util.List<String> toRemove = new ArrayList<>();
+                for (String uid : presenceListeners.keySet())
+                    if (!latest.contains(uid)) toRemove.add(uid);
+                for (String uid : toRemove) {
+                    ValueEventListener l = presenceListeners.remove(uid);
+                    if (l != null) FirebaseUtils.getUserRef(uid).removeEventListener(l);
+                    memberLastSeen.remove(uid);
+                    memberNames.remove(uid);
+                }
+                // Naye members ke liye presence sub karo
+                for (String uid : latest) {
+                    if (presenceListeners.containsKey(uid)) continue;
+                    if (uid.equals(currentUid)) continue; // self ignore
+                    subscribeMemberPresence(uid);
+                }
+                refreshSubtitle();
+            }
+            @Override public void onCancelled(DatabaseError e) {}
+        };
+        membersRef.addValueEventListener(membersListener);
+
+        // 30s pe subtitle re-render (online window slide)
+        subtitleHandler.post(subtitleRefresh);
+    }
+    private void subscribeMemberPresence(final String uid) {
+        ValueEventListener l = new ValueEventListener() {
+            @Override public void onDataChange(DataSnapshot snap) {
+                Long ls = snap.child("lastSeen").getValue(Long.class);
+                String nm = snap.child("name").getValue(String.class);
+                if (nm == null) nm = snap.child("displayName").getValue(String.class);
+                memberLastSeen.put(uid, ls == null ? 0L : ls);
+                memberNames.put(uid, nm == null ? "Member" : nm);
+                refreshSubtitle();
+            }
+            @Override public void onCancelled(DatabaseError e) {}
+        };
+        presenceListeners.put(uid, l);
+        FirebaseUtils.getUserRef(uid).addValueEventListener(l);
+    }
+    private void setMyTyping(boolean typing) {
+        if (typing == amTyping) return;
+        amTyping = typing;
+        DatabaseReference me = FirebaseUtils
+            .getGroupTypingRef(groupId).child(currentUid);
+        if (typing) {
+            me.setValue(currentName == null ? "Someone" : currentName);
+            me.onDisconnect().removeValue();
+        } else {
+            me.removeValue();
+        }
+    }
+    private void refreshSubtitle() {
+        if (getSupportActionBar() == null) return;
+        // Priority 1: typing
+        if (!typingNames.isEmpty()) {
+            String sub;
+            if (typingNames.size() == 1) {
+                sub = typingNames.values().iterator().next() + " typing…";
+            } else if (typingNames.size() == 2) {
+                java.util.Iterator<String> it = typingNames.values().iterator();
+                sub = it.next() + " & " + it.next() + " typing…";
+            } else {
+                sub = typingNames.size() + " people typing…";
+            }
+            getSupportActionBar().setSubtitle(sub);
+            return;
+        }
+        // Priority 2: online count + members
+        long now = System.currentTimeMillis();
+        int online = 0;
+        for (Long ls : memberLastSeen.values()) {
+            if (ls != null && (now - ls) < com.callx.app.utils.Constants.ONLINE_WINDOW_MS)
+                online++;
+        }
+        int members = totalMembers > 0 ? totalMembers : (memberLastSeen.size() + 1);
+        String sub = members + (members == 1 ? " member" : " members");
+        if (online > 0) sub = online + " online • " + sub;
+        getSupportActionBar().setSubtitle(sub);
+    }
+    @Override
+    protected void onPause() {
+        // App background ya activity left → typing flag turant clear
+        typingStopHandler.removeCallbacks(typingStopRunnable);
+        setMyTyping(false);
+        super.onPause();
+    }
+    @Override
+    protected void onDestroy() {
+        // Saare realtime listeners detach karo (memory leak / wasted reads se bachao)
+        subtitleHandler.removeCallbacks(subtitleRefresh);
+        typingStopHandler.removeCallbacks(typingStopRunnable);
+        setMyTyping(false);
+        if (typingRef  != null && typingListener  != null)
+            typingRef.removeEventListener(typingListener);
+        if (membersRef != null && membersListener != null)
+            membersRef.removeEventListener(membersListener);
+        for (Map.Entry<String, ValueEventListener> e : presenceListeners.entrySet()) {
+            FirebaseUtils.getUserRef(e.getKey()).removeEventListener(e.getValue());
+        }
+        presenceListeners.clear();
+        super.onDestroy();
     }
 }

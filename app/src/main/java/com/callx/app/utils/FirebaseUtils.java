@@ -38,6 +38,13 @@ public class FirebaseUtils {
     public static DatabaseReference getUserGroupsRef(String uid) {
         return db().getReference("userGroups").child(uid);
     }
+    // Per-group ephemeral typing map: groups/{groupId}/typing/{uid} = displayName
+    public static DatabaseReference getGroupTypingRef(String groupId) {
+        return db().getReference("groups").child(groupId).child("typing");
+    }
+    public static DatabaseReference getGroupMembersRef(String groupId) {
+        return db().getReference("groups").child(groupId).child("members");
+    }
     public static DatabaseReference getStatusRef() {
         return db().getReference("status");
     }

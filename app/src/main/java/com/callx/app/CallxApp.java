@@ -93,7 +93,21 @@ public class CallxApp extends Application {
             Constants.CHANNEL_GROUPS, "Group Messages",
             NotificationManager.IMPORTANCE_HIGH);
         groups.enableVibration(true);
+        groups.enableLights(true);
+        groups.setShowBadge(true);
+        groups.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
         nm.createNotificationChannel(groups);
+
+        // Per-group muted channel — silent + low importance, lekin notification
+        // dikh raha hota hai taaki user ko khabar rahe ki group me activity hai.
+        NotificationChannel groupsMuted = new NotificationChannel(
+            Constants.CHANNEL_GROUPS_MUTED, "Group Messages (Muted)",
+            NotificationManager.IMPORTANCE_LOW);
+        groupsMuted.enableVibration(false);
+        groupsMuted.setSound(null, null);
+        groupsMuted.setShowBadge(false);
+        groupsMuted.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
+        nm.createNotificationChannel(groupsMuted);
 
         NotificationChannel status = new NotificationChannel(
             Constants.CHANNEL_STATUS, "Status / Story",

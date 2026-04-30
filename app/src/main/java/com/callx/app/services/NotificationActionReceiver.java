@@ -132,6 +132,102 @@ public class NotificationActionReceiver extends BroadcastReceiver {
             PushNotify.notifyMessage(partnerUid, myUid, myName, chatId,
                 msgRef.getKey(), text, "message", "");
             if (nm != null) nm.cancel(notifId);
+            return;
+        }
+
+        // ==================== GROUP NOTIFICATION ACTIONS ====================
+        String groupId   = intent.getStringExtra(Constants.EXTRA_GROUP_ID);
+        String groupName = intent.getStringExtra(Constants.EXTRA_GROUP_NAME);
+
+        // Group: Mark as read — local notification cancel + server unread reset
+        if (Constants.ACTION_GROUP_MARK_READ.equals(action)) {
+            if (groupId != null && !groupId.isEmpty()) {
+                FirebaseUtils.db().getReference("groups")
+                    .child(groupId).child("unread").child(myUid).setValue(0);
+            }
+            if (nm != null) nm.cancel(notifId);
+            return;
+        }
+        // Group: Mute — mutedBy/{uid}=true. Future me silent low channel.
+        if (Constants.ACTION_GROUP_MUTE.equals(action)) {
+            if (groupId != null && !groupId.isEmpty()) {
+                FirebaseUtils.db().getReference("groups")
+                    .child(groupId).child("mutedBy").child(myUid).setValue(true);
+            }
+            if (nm != null) nm.cancel(notifId);
+            Toast.makeText(context, "Group muted", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        // Group: Unmute
+        if (Constants.ACTION_GROUP_UNMUTE.equals(action)) {
+            if (groupId != null && !groupId.isEmpty()) {
+                FirebaseUtils.db().getReference("groups")
+                    .child(groupId).child("mutedBy").child(myUid).removeValue();
+            }
+            if (nm != null) nm.cancel(notifId);
+            Toast.makeText(context, "Group unmuted", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        // Group: Leave — apne aap ko members + index dono se remove karo
+        if (Constants.ACTION_GROUP_LEAVE.equals(action)) {
+            if (groupId != null && !groupId.isEmpty()) {
+                Map<String, Object> upd = new HashMap<>();
+                upd.put("groups/" + groupId + "/members/" + myUid, null);
+                upd.put("groups/" + groupId + "/admins/"  + myUid, null);
+                upd.put("groups/" + groupId + "/mutedBy/" + myUid, null);
+                upd.put("groups/" + groupId + "/unread/"  + myUid, null);
+                upd.put("userGroups/" + myUid + "/" + groupId, null);
+                FirebaseUtils.db().getReference().updateChildren(upd);
+                // System message group me daalo
+                DatabaseReference sysRef = FirebaseUtils
+                    .getGroupMessagesRef(groupId).push();
+                Map<String, Object> sys = new HashMap<>();
+                sys.put("id",         sysRef.getKey());
+                sys.put("senderId",   "system");
+                sys.put("senderName", "System");
+                sys.put("text",       myName + " left the group");
+                sys.put("type",       "system");
+                sys.put("timestamp",  System.currentTimeMillis());
+                sysRef.setValue(sys);
+            }
+            if (nm != null) nm.cancel(notifId);
+            Toast.makeText(context, "Left group", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        // Group: Inline reply — text msg push to group + fanout to other members
+        if (Constants.ACTION_GROUP_REPLY.equals(action)) {
+            Bundle remote = RemoteInput.getResultsFromIntent(intent);
+            if (remote == null) return;
+            CharSequence reply = remote.getCharSequence(
+                Constants.KEY_GROUP_TEXT_REPLY);
+            if (reply == null) return;
+            String text = reply.toString().trim();
+            if (text.isEmpty() || groupId == null || groupId.isEmpty()) return;
+            DatabaseReference msgRef = FirebaseUtils
+                .getGroupMessagesRef(groupId).push();
+            Map<String, Object> m = new HashMap<>();
+            m.put("id",         msgRef.getKey());
+            m.put("senderId",   myUid);
+            m.put("senderName", myName);
+            m.put("text",       text);
+            m.put("type",       "text");
+            m.put("timestamp",  System.currentTimeMillis());
+            msgRef.setValue(m);
+            // Group meta update
+            Map<String, Object> meta = new HashMap<>();
+            meta.put("lastMessage",     text);
+            meta.put("lastSenderName",  myName);
+            meta.put("lastMessageAt",   System.currentTimeMillis());
+            // Mera apna unread reset
+            meta.put("unread/" + myUid, 0);
+            FirebaseUtils.db().getReference("groups").child(groupId)
+                .updateChildren(meta);
+            // Server fanout (rich)
+            String myPhoto = com.callx.app.CallxApp.getMyPhotoUrlCached();
+            PushNotify.notifyGroupRich(groupId, myUid, myName,
+                myPhoto == null ? "" : myPhoto,
+                msgRef.getKey(), "group_message", text, "");
+            if (nm != null) nm.cancel(notifId);
         }
     }
 }

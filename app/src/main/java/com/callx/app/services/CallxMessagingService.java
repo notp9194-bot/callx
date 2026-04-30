@@ -661,24 +661,297 @@ public class CallxMessagingService extends FirebaseMessagingService {
         final String text; final long ts; final boolean fromMe;
         HistoryItem(String t, long s, boolean me) { text = t; ts = s; fromMe = me; }
     }
-    private void showGroupMessage(Map<String, String> data) {
-        String title = data.getOrDefault("fromName", "Group");
-        String body  = data.getOrDefault("text", "Naya group message");
-        Intent i = new Intent(this, MainActivity.class);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, i,
+    // ----- Background-killed WhatsApp-style GROUP message notification -----
+    // Features:
+    //  * Stable per-group notif id (saare msgs same group ke ek hi notification me stack)
+    //  * MessagingStyle (group conversation = true) with last 3 messages history
+    //  * Sender Person + circular avatar; me Person with my own avatar (inline reply)
+    //  * Inline RemoteInput "Reply" action (broadcast → NotificationActionReceiver)
+    //  * "Mark as read" + "Mute group" actions
+    //  * Image attachment preview if msg type is image
+    //  * Lock-screen safe public version
+    //  * Per-receiver mute → silent low-importance channel (still visible)
+    //  * Group key bundle so multiple groups stack into a summary
+    //  * Tap → open GroupChatActivity directly (deep-link)
+    private void showGroupMessage(final Map<String, String> data) {
+        final String groupId    = data.getOrDefault("groupId", "");
+        final String groupName  = data.getOrDefault("groupName", "Group");
+        final String groupIcon  = data.getOrDefault("groupIcon", "");
+        final String fromUid    = data.getOrDefault("fromUid", "");
+        final String fromName   = data.getOrDefault("fromName", "Member");
+        final String fromPhoto  = data.getOrDefault("fromPhoto", "");
+        final String fromMobile = data.getOrDefault("fromMobile", "");
+        final String mediaUrl   = data.getOrDefault("mediaUrl", "");
+        final String rawText    = data.getOrDefault("text", "Naya message");
+        final String type       = data.getOrDefault("type", "group_message");
+        final boolean serverMuted = "1".equals(data.getOrDefault("muted", "0"));
+        final String text = previewTextFor(messageTypeFromGroupType(type), rawText);
+
+        long ls = 0L;
+        try { ls = Long.parseLong(data.getOrDefault("fromLastSeen", "0")); }
+        catch (Exception ignored) {}
+        final long lastSeen = ls;
+        final boolean online = (System.currentTimeMillis() - lastSeen)
+                                < Constants.ONLINE_WINDOW_MS && lastSeen > 0;
+        final String status   = online ? "Online" : "Offline";
+        final String subText  = (fromMobile.isEmpty() ? "" : ("+" + fromMobile + " • "))
+                                + status;
+
+        if (groupId.isEmpty()) return;
+
+        // Stable per-group notif id (Feature: same-group grouping)
+        final int notifId = ("group_" + groupId).hashCode();
+
+        // Logged out → just show simple
+        if (FirebaseAuth.getInstance().getCurrentUser() == null) {
+            buildAndShowGroup(groupId, groupName, groupIcon, fromUid, fromName,
+                fromPhoto, mediaUrl, text, type, subText, notifId, null,
+                serverMuted);
+            return;
+        }
+        final String myUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+
+        // Client-side mute check (server bhi flag bhejta hai, but defense-in-depth)
+        FirebaseUtils.db().getReference("groups").child(groupId).child("mutedBy")
+            .child(myUid).addListenerForSingleValueEvent(new ValueEventListener() {
+                @Override public void onDataChange(DataSnapshot s) {
+                    boolean clientMuted = Boolean.TRUE.equals(s.getValue(Boolean.class));
+                    loadGroupHistoryAndBuild(myUid, groupId, groupName, groupIcon,
+                        fromUid, fromName, fromPhoto, mediaUrl, text, type, subText,
+                        notifId, serverMuted || clientMuted);
+                }
+                @Override public void onCancelled(DatabaseError e) {
+                    loadGroupHistoryAndBuild(myUid, groupId, groupName, groupIcon,
+                        fromUid, fromName, fromPhoto, mediaUrl, text, type, subText,
+                        notifId, serverMuted);
+                }
+            });
+    }
+    // group_message → message; image/video/audio/file/pdf passthrough
+    private static String messageTypeFromGroupType(String t) {
+        if (t == null || "group_message".equals(t)) return "text";
+        return t;
+    }
+    private void loadGroupHistoryAndBuild(final String myUid, final String groupId,
+            final String groupName, final String groupIcon, final String fromUid,
+            final String fromName, final String fromPhoto, final String mediaUrl,
+            final String text, final String type, final String subText,
+            final int notifId, final boolean muted) {
+        Query q = FirebaseUtils.getGroupMessagesRef(groupId)
+            .orderByChild("timestamp").limitToLast(3);
+        q.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override public void onDataChange(DataSnapshot snap) {
+                List<GroupHistoryItem> hist = new ArrayList<>();
+                for (DataSnapshot c : snap.getChildren()) {
+                    String s   = c.child("senderId").getValue() != null
+                                ? String.valueOf(c.child("senderId").getValue()) : "";
+                    String sn  = c.child("senderName").getValue() != null
+                                ? String.valueOf(c.child("senderName").getValue()) : "Member";
+                    String t   = c.child("text").getValue() != null
+                                ? String.valueOf(c.child("text").getValue()) : "";
+                    String tp  = c.child("type").getValue() != null
+                                ? String.valueOf(c.child("type").getValue()) : "text";
+                    Long   ts  = c.child("timestamp").getValue() != null
+                                ? c.child("timestamp").getValue(Long.class)
+                                : System.currentTimeMillis();
+                    if (t.isEmpty()) t = previewTextFor(tp, "");
+                    boolean fromMe = s.equals(myUid);
+                    hist.add(new GroupHistoryItem(t, ts, fromMe, sn, s));
+                }
+                Collections.sort(hist, (a, b) -> Long.compare(a.ts, b.ts));
+                buildAndShowGroup(groupId, groupName, groupIcon, fromUid, fromName,
+                    fromPhoto, mediaUrl, text, type, subText, notifId, hist, muted);
+            }
+            @Override public void onCancelled(DatabaseError e) {
+                buildAndShowGroup(groupId, groupName, groupIcon, fromUid, fromName,
+                    fromPhoto, mediaUrl, text, type, subText, notifId, null, muted);
+            }
+        });
+    }
+    private void buildAndShowGroup(final String groupId, final String groupName,
+            final String groupIcon, final String fromUid, final String fromName,
+            final String fromPhoto, final String mediaUrl, final String text,
+            final String type, final String subText, final int notifId,
+            @Nullable final List<GroupHistoryItem> hist, final boolean muted) {
+        bg.execute(() -> {
+            Bitmap senderAvatar = circle(downloadBitmap(fromPhoto, 256, 256));
+            Bitmap myAvatar     = circle(loadMyAvatar());
+            Bitmap groupAvatar  = circle(downloadBitmap(groupIcon, 256, 256));
+            boolean isImage = "image".equals(type)
+                && mediaUrl != null && !mediaUrl.isEmpty();
+            Bitmap picture = isImage ? downloadBitmap(mediaUrl, 1024, 768) : null;
+            postRichGroupNotification(groupId, groupName, fromUid, fromName,
+                fromPhoto, mediaUrl, text, type, subText, notifId, hist,
+                senderAvatar, myAvatar, groupAvatar, picture, muted);
+        });
+    }
+    private void postRichGroupNotification(String groupId, String groupName,
+            String fromUid, String fromName, String fromPhoto, String mediaUrl,
+            String text, String type, String subText, int notifId,
+            @Nullable List<GroupHistoryItem> hist,
+            @Nullable Bitmap senderAvatar, @Nullable Bitmap myAvatar,
+            @Nullable Bitmap groupAvatar, @Nullable Bitmap picture, boolean muted) {
+        // Sender Person (with circular avatar)
+        Person.Builder sb = new Person.Builder().setName(fromName).setKey(fromUid);
+        if (senderAvatar != null) sb.setIcon(IconCompat.createWithBitmap(senderAvatar));
+        Person sender = sb.build();
+        // Me Person (with my own avatar — inline reply right side me dikhega)
+        Person.Builder meB = new Person.Builder().setName("You").setKey("me");
+        if (myAvatar != null) meB.setIcon(IconCompat.createWithBitmap(myAvatar));
+        Person me = meB.build();
+        // Tap → open GroupChatActivity directly
+        Intent open = new Intent(this,
+            com.callx.app.activities.GroupChatActivity.class);
+        open.putExtra("groupId",   groupId);
+        open.putExtra("groupName", groupName);
+        open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent openPi = PendingIntent.getActivity(this, notifId, open,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        NotificationCompat.Builder b = new NotificationCompat.Builder(this,
-                Constants.CHANNEL_GROUPS)
+        // Action: Reply (inline RemoteInput, group reply key)
+        RemoteInput remoteInput =
+            new RemoteInput.Builder(Constants.KEY_GROUP_TEXT_REPLY)
+                .setLabel("Reply to " + groupName + "…").build();
+        PendingIntent replyPi = PendingIntent.getBroadcast(this, notifId * 10 + 2,
+            buildGroupActionIntent(Constants.ACTION_GROUP_REPLY,
+                groupId, groupName, fromUid, fromName, notifId),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
+        NotificationCompat.Action replyAction =
+            new NotificationCompat.Action.Builder(
+                    R.drawable.ic_message_notification, "Reply", replyPi)
+                .addRemoteInput(remoteInput)
+                .setAllowGeneratedReplies(true)
+                .setSemanticAction(
+                    NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+                .build();
+        // Action: Mark as read
+        PendingIntent markPi = PendingIntent.getBroadcast(this, notifId * 10 + 1,
+            buildGroupActionIntent(Constants.ACTION_GROUP_MARK_READ,
+                groupId, groupName, fromUid, fromName, notifId),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        NotificationCompat.Action markAction =
+            new NotificationCompat.Action.Builder(
+                    R.drawable.ic_message_notification, "Mark as read", markPi)
+                .setSemanticAction(
+                    NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+                .setShowsUserInterface(false)
+                .build();
+        // Action: Mute group
+        PendingIntent mutePi = PendingIntent.getBroadcast(this, notifId * 10 + 3,
+            buildGroupActionIntent(Constants.ACTION_GROUP_MUTE,
+                groupId, groupName, fromUid, fromName, notifId),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        NotificationCompat.Action muteAction =
+            new NotificationCompat.Action.Builder(
+                    R.drawable.ic_message_notification, "Mute group", mutePi)
+                .setSemanticAction(
+                    NotificationCompat.Action.SEMANTIC_ACTION_MUTE)
+                .build();
+
+        // MessagingStyle — last 3 messages, isGroupConversation = true
+        NotificationCompat.MessagingStyle style =
+            new NotificationCompat.MessagingStyle(me)
+                .setConversationTitle(groupName)
+                .setGroupConversation(true);
+        if (hist != null && !hist.isEmpty()) {
+            // Sender Person ko reuse karne ke liye uid → Person map maintain karo
+            Map<String, Person> personCache = new HashMap<>();
+            personCache.put(fromUid, sender);
+            personCache.put("me",    me);
+            for (GroupHistoryItem h : hist) {
+                Person p;
+                if (h.fromMe) {
+                    p = me;
+                } else if (personCache.containsKey(h.senderUid)) {
+                    p = personCache.get(h.senderUid);
+                } else {
+                    p = new Person.Builder()
+                        .setName(h.senderName == null ? "Member" : h.senderName)
+                        .setKey(h.senderUid)
+                        .build();
+                    personCache.put(h.senderUid, p);
+                }
+                style.addMessage(h.text, h.ts, p);
+            }
+        } else {
+            style.addMessage(text, System.currentTimeMillis(), sender);
+        }
+
+        // Channel — muted = silent low-importance channel
+        String channel = muted ? Constants.CHANNEL_GROUPS_MUTED
+                               : Constants.CHANNEL_GROUPS;
+
+        // Lock-screen safe public version (no preview / no image)
+        NotificationCompat.Builder publicB = new NotificationCompat.Builder(this,
+                channel)
             .setSmallIcon(R.drawable.ic_group)
-            .setContentTitle(title + " (group)")
-            .setContentText(body)
-            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentTitle(groupName)
+            .setContentText("New group message")
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
+
+        // Main builder — group key for stacking + summary support
+        NotificationCompat.Builder b = new NotificationCompat.Builder(this, channel)
+            .setSmallIcon(R.drawable.ic_group)
+            .setContentTitle(groupName)
+            .setContentText(fromName + ": " + text)
+            .setSubText(subText)
+            .setStyle(style)
+            .setWhen(System.currentTimeMillis())
+            .setShowWhen(true)
             .setAutoCancel(true)
-            .setContentIntent(pi);
+            .setOnlyAlertOnce(false)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicB.build())
+            .setPriority(muted ? NotificationCompat.PRIORITY_LOW
+                               : NotificationCompat.PRIORITY_HIGH)
+            .setGroup(Constants.GROUP_KEY_GROUPS)
+            .setContentIntent(openPi)
+            .addAction(replyAction)
+            .addAction(markAction)
+            .addAction(muteAction);
+        // Group icon as large icon (fallback to sender avatar)
+        if (groupAvatar != null)       b.setLargeIcon(groupAvatar);
+        else if (senderAvatar != null) b.setLargeIcon(senderAvatar);
+        // Image attachment preview
+        if (picture != null) {
+            b.setStyle(new NotificationCompat.BigPictureStyle()
+                .bigPicture(picture)
+                .setSummaryText(fromName + ": " + text));
+        }
         NotificationManager nm = (NotificationManager)
             getSystemService(Context.NOTIFICATION_SERVICE);
-        nm.notify(new Random().nextInt(99999), b.build());
+        nm.notify(notifId, b.build());
+
+        // Summary notification — multiple groups ko ek bundle me dikhata hai
+        NotificationCompat.Builder summary = new NotificationCompat.Builder(this,
+                channel)
+            .setSmallIcon(R.drawable.ic_group)
+            .setContentTitle("Group messages")
+            .setContentText(groupName + ": " + fromName)
+            .setStyle(new NotificationCompat.InboxStyle()
+                .setSummaryText("CallX Groups"))
+            .setGroup(Constants.GROUP_KEY_GROUPS)
+            .setGroupSummary(true)
+            .setAutoCancel(true);
+        nm.notify(Constants.GROUP_KEY_GROUPS.hashCode(), summary.build());
+    }
+    private Intent buildGroupActionIntent(String action, String groupId,
+                                          String groupName, String fromUid,
+                                          String fromName, int notifId) {
+        return new Intent(this, NotificationActionReceiver.class)
+            .setAction(action)
+            .putExtra(Constants.EXTRA_GROUP_ID,     groupId   == null ? "" : groupId)
+            .putExtra(Constants.EXTRA_GROUP_NAME,   groupName == null ? "" : groupName)
+            .putExtra(Constants.EXTRA_PARTNER_UID,  fromUid   == null ? "" : fromUid)
+            .putExtra(Constants.EXTRA_PARTNER_NAME, fromName  == null ? "" : fromName)
+            .putExtra(Constants.EXTRA_NOTIF_ID,     notifId);
+    }
+    private static class GroupHistoryItem {
+        final String text; final long ts; final boolean fromMe;
+        final String senderName; final String senderUid;
+        GroupHistoryItem(String t, long s, boolean me, String sn, String su) {
+            text = t; ts = s; fromMe = me; senderName = sn; senderUid = su;
+        }
     }
     private void showStatus(Map<String, String> data) {
         String name = data.getOrDefault("fromName", "Friend");

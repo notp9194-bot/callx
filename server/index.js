@@ -133,48 +133,145 @@ app.post("/notify", async (req, res) => {
   }
 });
 
-// ---- Notify group (fanout to all members except sender) ----
+// ---- Notify group (production-grade fanout to all members except sender) ----
+// Per-receiver handling:
+//  * permaBlocked sender drop kar deta hai (group me bhi)
+//  * mutedBy/{uid} = true => "muted" flag set hota hai (client low-priority channel)
+//  * unread/{uid} server-side increment hota hai (group meta)
+//  * sender ka latest photo + lastSeen lookup hota hai (rich notification ke liye)
+//  * stale FCM tokens (UNREGISTERED / NOT_FOUND) DB se clean ho jaate hain
 app.post("/notify/group", async (req, res) => {
   if (!firebaseReady)
     return res.status(503).json({ error: "Firebase not configured" });
-  const { groupId, fromUid, fromName, type, text } = req.body || {};
+  const {
+    groupId, fromUid, fromName, fromPhoto,
+    messageId, type, text, mediaUrl
+  } = req.body || {};
   if (!groupId) return res.status(400).json({ error: "groupId required" });
   try {
     const gSnap = await admin.database()
       .ref("groups/" + groupId).once("value");
     const g = gSnap.val();
     if (!g) return res.status(404).json({ error: "group not found" });
+
+    const groupName = String(g.name || "Group");
+    const groupIcon = String(g.iconUrl || "");
     const memberUids = Object.keys(g.members || {})
       .filter(uid => uid !== fromUid);
-    const tokens = [];
-    for (const uid of memberUids) {
-      const us = await admin.database().ref("users/" + uid).once("value");
-      const t = us.val() && us.val().fcmToken;
-      if (t) tokens.push(t);
-    }
-    if (!tokens.length) return res.json({ ok: true, sent: 0 });
-    const responses = [];
-    for (const tk of tokens) {
+    const mutedBy = g.mutedBy || {};
+
+    // Sender ka latest profile (photo / lastSeen) — agar client ne nahi bheja
+    // to RTDB se nikal lo. Notification rich banane ke liye chahiye.
+    let senderPhoto   = String(fromPhoto || "");
+    let senderMobile  = "";
+    let senderLastSeen = "0";
+    if (fromUid) {
       try {
-        const r = await admin.messaging().send({
+        const fSnap = await admin.database()
+          .ref("users/" + fromUid).once("value");
+        const f = fSnap.val() || {};
+        if (!senderPhoto) senderPhoto = String(f.photoUrl || "");
+        senderMobile   = String(f.mobile || f.callxId || "");
+        senderLastSeen = String(f.lastSeen || 0);
+      } catch (e) { /* best-effort */ }
+    }
+
+    // Per-member fanout
+    const updates = {};       // group/{groupId}/unread/{uid} bumps
+    const staleTokens = [];   // (uid, token) jinhe DB se hatana hai
+    let sent = 0, dropped = 0;
+
+    await Promise.all(memberUids.map(async (uid) => {
+      try {
+        // Permanent block: agar receiver ne sender ko perma-block kiya hua hai
+        // to is member ko notify mat karo.
+        if (fromUid) {
+          const pbSnap = await admin.database()
+            .ref("permaBlocked/" + uid + "/" + fromUid).once("value");
+          if (pbSnap.val() === true) { dropped++; return; }
+        }
+        const us = await admin.database()
+          .ref("users/" + uid).once("value");
+        const u = us.val() || {};
+        const tk = u.fcmToken;
+        if (!tk) { dropped++; return; }
+
+        const isMuted = mutedBy[uid] === true;
+
+        // Unread bump (server-side, atomic)
+        updates["groups/" + groupId + "/unread/" + uid] =
+          admin.database.ServerValue.increment(1);
+
+        await admin.messaging().send({
           token: tk,
           data: {
-            type:     String(type || "group_message"),
-            groupId:  String(groupId),
-            fromUid:  String(fromUid || ""),
-            fromName: String((g.name || "Group") + " • " + (fromName || "")),
-            text:     String(text || "")
+            type:           String(type || "group_message"),
+            groupId:        String(groupId),
+            groupName:      groupName,
+            groupIcon:      groupIcon,
+            fromUid:        String(fromUid || ""),
+            fromName:       String(fromName || ""),
+            fromPhoto:      senderPhoto,
+            fromMobile:     senderMobile,
+            fromLastSeen:   senderLastSeen,
+            messageId:      String(messageId || ""),
+            mediaUrl:       String(mediaUrl  || ""),
+            text:           String(text      || ""),
+            muted:          isMuted ? "1" : "0"
           },
-          android: { priority: "high" }
+          android: {
+            priority: isMuted ? "normal" : "high",
+            collapseKey: "grp_" + groupId,
+            ttl: 24 * 60 * 60 * 1000
+          }
         });
-        responses.push(r);
+        sent++;
       } catch (e) {
-        console.warn("group send fail:", e.message);
+        // Stale FCM token cleanup
+        const code = e && (e.code || e.errorInfo && e.errorInfo.code);
+        if (code === "messaging/registration-token-not-registered" ||
+            code === "messaging/invalid-registration-token") {
+          staleTokens.push(uid);
+        } else {
+          console.warn("group send fail (" + uid + "):",
+            e && e.message ? e.message : e);
+        }
+        dropped++;
       }
-    }
-    res.json({ ok: true, sent: responses.length });
+    }));
+
+    // Best-effort writes — agar fail bhi ho to push response affect na ho
+    try {
+      if (Object.keys(updates).length) {
+        await admin.database().ref().update(updates);
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      for (const uid of staleTokens) {
+        await admin.database()
+          .ref("users/" + uid + "/fcmToken").remove();
+      }
+    } catch (e) { /* ignore */ }
+
+    res.json({ ok: true, sent, dropped, members: memberUids.length });
   } catch (e) {
     console.error("group notify err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- Reset unread counter for a group (called by client when chat opened) ----
+app.post("/group/markRead", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+  const { groupId, uid } = req.body || {};
+  if (!groupId || !uid)
+    return res.status(400).json({ error: "groupId & uid required" });
+  try {
+    await admin.database()
+      .ref("groups/" + groupId + "/unread/" + uid).set(0);
+    res.json({ ok: true });
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
