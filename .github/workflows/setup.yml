@@ -751,7 +751,7 @@ jobs:
           ENDOFFILE
 
           # ============================================================
-          # LAYOUTS — auth / main / chat / call
+     e4     # LAYOUTS — auth / main / chat / call
           # ============================================================
           cat > app/src/main/res/layout/activity_splash.xml << 'ENDOFFILE'
           <?xml version="1.0" encoding="utf-8"?>
@@ -8139,28 +8139,59 @@ jobs:
           ENDOFFILE
 
           # ============================================================
-          # Final build step — Debug APK FIRST (always succeeds, easy install),
-          # then attempt Release APK + AAB.
+          # Final build step — Debug APK FIRST, then Release APK + AAB.
+          # Both build logs are captured to files so failures can be
+          # downloaded from the Actions artifacts even on red runs.
+          # The job FAILS LOUDLY if Debug or Release fails — no silent
+          # fallback to an old/stale APK.
           # ============================================================
+          mkdir -p build-logs
+
           echo "::group::Build DEBUG APK"
-          ./gradlew :app:assembleDebug --stacktrace --no-daemon
-          DEBUG_RC=$?
+          set +e
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon 2>&1 | tee build-logs/debug.log
+          DEBUG_RC=${PIPESTATUS[0]}
+          set -e
           echo "Debug build exit=${DEBUG_RC}"
           echo "::endgroup::"
 
-          echo "::group::Build RELEASE APK + AAB (best-effort)"
-          ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace --no-daemon || \
-            echo "Release build failed — debug APK is still available."
+          echo "::group::Build RELEASE APK + AAB"
+          set +e
+          ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace --no-daemon 2>&1 | tee build-logs/release.log
+          RELEASE_RC=${PIPESTATUS[0]}
+          set -e
+          echo "Release build exit=${RELEASE_RC}"
           echo "::endgroup::"
 
           # Surface the produced artifacts in the log
           echo "----- Built artifacts -----"
           find app/build/outputs -type f \( -name "*.apk" -o -name "*.aab" \) -print 2>/dev/null || true
 
-          if [ "${DEBUG_RC}" != "0" ]; then
-            echo "::error::Debug APK build failed"
-            exit ${DEBUG_RC}
+          # Save Gradle's own report dirs too (very useful for diagnosing failures)
+          if [ -d app/build/reports ]; then
+            cp -r app/build/reports build-logs/reports || true
           fi
+
+          # Fail the job if either build failed — Debug failure is fatal,
+          # Release failure is also fatal so you don't unknowingly ship
+          # a debug-only APK as if it were the new release build.
+          if [ "${DEBUG_RC}" != "0" ]; then
+            echo "::error title=Debug build failed::See build-logs/debug.log artifact for the Gradle stacktrace."
+          fi
+          if [ "${RELEASE_RC}" != "0" ]; then
+            echo "::error title=Release build failed::See build-logs/release.log artifact for the Gradle stacktrace."
+          fi
+          if [ "${DEBUG_RC}" != "0" ] || [ "${RELEASE_RC}" != "0" ]; then
+            exit 1
+          fi
+
+      - name: Upload Build Logs (debug + release + reports)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CallX-v4-BuildLogs
+          path: build-logs/**
+          if-no-files-found: warn
 
       - name: Upload Debug APK
         if: always()
@@ -8178,14 +8209,4 @@ jobs:
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
-          if-no-files-found: warn
-
-      - name: Upload All APK/AAB (combined)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CallX-v4-APK
-          path: |
-            app/build/outputs/apk/**/*.apk
-            app/build/outputs/bundle/**/*.aab
           if-no-files-found: warn
