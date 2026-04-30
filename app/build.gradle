@@ -9,8 +9,8 @@ android {
         applicationId "com.callx.app"
         minSdk 23
         targetSdk 34
-        versionCode 158
-        versionName "2.1.58"
+        versionCode 159
+        versionName "2.1.59"
         vectorDrawables.useSupportLibrary = true
     }
     buildTypes {

@@ -3587,6 +3587,7 @@ id et_about
 id et_email
 id et_group_name
 id et_message
+id et_mobile
 id et_name
 id et_password
 id et_search_id
@@ -3660,6 +3661,7 @@ id fitXY
 id fixed
 id fixed_height
 id fixed_width
+id fl_avatar_picker
 id fl_text_status
 id fl_video
 id flip
@@ -3700,6 +3702,7 @@ id is_pooling_container_tag
 id italic
 id item_touch_helper_previous_elevation
 id iv_avatar
+id iv_avatar_preview
 id iv_call_avatar
 id iv_caller_avatar
 id iv_file_icon
@@ -3973,6 +3976,7 @@ id textinput_placeholder
 id textinput_prefix_text
 id textinput_suffix_text
 id texture_view
+id til_mobile
 id til_name
 id time
 id title
@@ -3993,6 +3997,7 @@ id transition_transform
 id triangle
 id tv_audio_dur
 id tv_avatar
+id tv_avatar_hint
 id tv_call_status
 id tv_caller_name
 id tv_caller_sub

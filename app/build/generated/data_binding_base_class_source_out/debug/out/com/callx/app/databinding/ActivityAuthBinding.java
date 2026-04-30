@@ -4,6 +4,7 @@ package com.callx.app.databinding;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
@@ -14,6 +15,7 @@ import com.callx.app.R;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
+import de.hdodenhof.circleimageview.CircleImageView;
 import java.lang.NullPointerException;
 import java.lang.Override;
 import java.lang.String;
@@ -32,28 +34,50 @@ public final class ActivityAuthBinding implements ViewBinding {
   public final TextInputEditText etEmail;
 
   @NonNull
+  public final TextInputEditText etMobile;
+
+  @NonNull
   public final TextInputEditText etName;
 
   @NonNull
   public final TextInputEditText etPassword;
 
   @NonNull
+  public final FrameLayout flAvatarPicker;
+
+  @NonNull
+  public final CircleImageView ivAvatarPreview;
+
+  @NonNull
+  public final TextInputLayout tilMobile;
+
+  @NonNull
   public final TextInputLayout tilName;
+
+  @NonNull
+  public final TextView tvAvatarHint;
 
   @NonNull
   public final TextView tvError;
 
   private ActivityAuthBinding(@NonNull ScrollView rootView, @NonNull MaterialButton btnLogin,
       @NonNull MaterialButton btnSignup, @NonNull TextInputEditText etEmail,
-      @NonNull TextInputEditText etName, @NonNull TextInputEditText etPassword,
-      @NonNull TextInputLayout tilName, @NonNull TextView tvError) {
+      @NonNull TextInputEditText etMobile, @NonNull TextInputEditText etName,
+      @NonNull TextInputEditText etPassword, @NonNull FrameLayout flAvatarPicker,
+      @NonNull CircleImageView ivAvatarPreview, @NonNull TextInputLayout tilMobile,
+      @NonNull TextInputLayout tilName, @NonNull TextView tvAvatarHint, @NonNull TextView tvError) {
     this.rootView = rootView;
     this.btnLogin = btnLogin;
     this.btnSignup = btnSignup;
     this.etEmail = etEmail;
+    this.etMobile = etMobile;
     this.etName = etName;
     this.etPassword = etPassword;
+    this.flAvatarPicker = flAvatarPicker;
+    this.ivAvatarPreview = ivAvatarPreview;
+    this.tilMobile = tilMobile;
     this.tilName = tilName;
+    this.tvAvatarHint = tvAvatarHint;
     this.tvError = tvError;
   }
 
@@ -102,6 +126,12 @@ public final class ActivityAuthBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.et_mobile;
+      TextInputEditText etMobile = ViewBindings.findChildViewById(rootView, id);
+      if (etMobile == null) {
+        break missingId;
+      }
+
       id = R.id.et_name;
       TextInputEditText etName = ViewBindings.findChildViewById(rootView, id);
       if (etName == null) {
@@ -114,9 +144,33 @@ public final class ActivityAuthBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.fl_avatar_picker;
+      FrameLayout flAvatarPicker = ViewBindings.findChildViewById(rootView, id);
+      if (flAvatarPicker == null) {
+        break missingId;
+      }
+
+      id = R.id.iv_avatar_preview;
+      CircleImageView ivAvatarPreview = ViewBindings.findChildViewById(rootView, id);
+      if (ivAvatarPreview == null) {
+        break missingId;
+      }
+
+      id = R.id.til_mobile;
+      TextInputLayout tilMobile = ViewBindings.findChildViewById(rootView, id);
+      if (tilMobile == null) {
+        break missingId;
+      }
+
       id = R.id.til_name;
       TextInputLayout tilName = ViewBindings.findChildViewById(rootView, id);
       if (tilName == null) {
+        break missingId;
+      }
+
+      id = R.id.tv_avatar_hint;
+      TextView tvAvatarHint = ViewBindings.findChildViewById(rootView, id);
+      if (tvAvatarHint == null) {
         break missingId;
       }
 
@@ -126,8 +180,9 @@ public final class ActivityAuthBinding implements ViewBinding {
         break missingId;
       }
 
-      return new ActivityAuthBinding((ScrollView) rootView, btnLogin, btnSignup, etEmail, etName,
-          etPassword, tilName, tvError);
+      return new ActivityAuthBinding((ScrollView) rootView, btnLogin, btnSignup, etEmail, etMobile,
+          etName, etPassword, flAvatarPicker, ivAvatarPreview, tilMobile, tilName, tvAvatarHint,
+          tvError);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));
