@@ -54,6 +54,23 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/text_muted"
                 android:textSize="11sp"/>
+            <TextView
+                android:id="@+id/tv_unread_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="20dp"
+                android:minHeight="20dp"
+                android:gravity="center"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp"
+                android:textColor="@color/white"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:background="@drawable/bg_unread_badge"
+                android:layout_marginTop="6dp"
+                android:visibility="gone"/>
             <ImageButton
                 android:id="@+id/btn_call"
                 android:layout_width="36dp"

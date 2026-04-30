@@ -9,5 +9,9 @@ public class User {
     public String photoUrl;
     public String fcmToken;
     public Long lastSeen;
+    // WhatsApp style chat list metadata
+    public String lastMessage;
+    public Long lastMessageAt;
+    public Long unread;
     public User() {}
 }

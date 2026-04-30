@@ -36,15 +36,19 @@ public final class ItemChatBinding implements ViewBinding {
   @NonNull
   public final TextView tvTime;
 
+  @NonNull
+  public final TextView tvUnreadBadge;
+
   private ItemChatBinding(@NonNull CardView rootView, @NonNull ImageButton btnCall,
       @NonNull CircleImageView ivAvatar, @NonNull TextView tvLastMessage, @NonNull TextView tvName,
-      @NonNull TextView tvTime) {
+      @NonNull TextView tvTime, @NonNull TextView tvUnreadBadge) {
     this.rootView = rootView;
     this.btnCall = btnCall;
     this.ivAvatar = ivAvatar;
     this.tvLastMessage = tvLastMessage;
     this.tvName = tvName;
     this.tvTime = tvTime;
+    this.tvUnreadBadge = tvUnreadBadge;
   }
 
   @Override
@@ -104,8 +108,14 @@ public final class ItemChatBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.tv_unread_badge;
+      TextView tvUnreadBadge = ViewBindings.findChildViewById(rootView, id);
+      if (tvUnreadBadge == null) {
+        break missingId;
+      }
+
       return new ItemChatBinding((CardView) rootView, btnCall, ivAvatar, tvLastMessage, tvName,
-          tvTime);
+          tvTime, tvUnreadBadge);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

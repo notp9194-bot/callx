@@ -34,9 +34,33 @@ public class ChatListAdapter extends RecyclerView.Adapter<ChatListAdapter.VH> {
         } else {
             h.ivAvatar.setImageResource(R.drawable.ic_person);
         }
-        if (u.lastSeen != null) {
-            h.tvTime.setText(fmt.format(new Date(u.lastSeen)));
-        } else h.tvTime.setText("");
+        // Last message preview (falls back to last-seen time text)
+        if (u.lastMessage != null && !u.lastMessage.isEmpty()) {
+            h.tvLastMessage.setText(u.lastMessage);
+        } else {
+            h.tvLastMessage.setText("Tap karke chat karo");
+        }
+        // Time: prefer lastMessageAt, then lastSeen
+        Long when = u.lastMessageAt != null ? u.lastMessageAt : u.lastSeen;
+        if (when != null && when > 0) {
+            h.tvTime.setText(fmt.format(new Date(when)));
+        } else {
+            h.tvTime.setText("");
+        }
+        // WhatsApp style unread badge
+        long unread = u.unread == null ? 0 : u.unread;
+        if (unread > 0) {
+            h.tvUnread.setText(unread > 99 ? "99+" : String.valueOf(unread));
+            h.tvUnread.setVisibility(View.VISIBLE);
+            h.tvName.setTextColor(
+                ctx.getResources().getColor(R.color.text_primary));
+            h.tvLastMessage.setTextColor(
+                ctx.getResources().getColor(R.color.text_primary));
+        } else {
+            h.tvUnread.setVisibility(View.GONE);
+            h.tvLastMessage.setTextColor(
+                ctx.getResources().getColor(R.color.text_secondary));
+        }
         h.itemView.setOnClickListener(v -> {
             Intent i = new Intent(ctx, ChatActivity.class);
             i.putExtra("partnerUid", u.uid);
@@ -53,7 +77,7 @@ public class ChatListAdapter extends RecyclerView.Adapter<ChatListAdapter.VH> {
     }
     @Override public int getItemCount() { return contacts.size(); }
     static class VH extends RecyclerView.ViewHolder {
-        TextView tvName, tvLastMessage, tvTime;
+        TextView tvName, tvLastMessage, tvTime, tvUnread;
         CircleImageView ivAvatar;
         ImageButton btnCall;
         VH(View v) {
@@ -61,6 +85,7 @@ public class ChatListAdapter extends RecyclerView.Adapter<ChatListAdapter.VH> {
             tvName        = v.findViewById(R.id.tv_name);
             tvLastMessage = v.findViewById(R.id.tv_last_message);
             tvTime        = v.findViewById(R.id.tv_time);
+            tvUnread      = v.findViewById(R.id.tv_unread_badge);
             ivAvatar      = v.findViewById(R.id.iv_avatar);
             btnCall       = v.findViewById(R.id.btn_call);
         }

@@ -55,6 +55,9 @@ public class ChatActivity extends AppCompatActivity {
         currentUid  = FirebaseAuth.getInstance().getCurrentUser().getUid();
         currentName = FirebaseUtils.getCurrentName();
         chatId = FirebaseUtils.getChatId(currentUid, partnerUid);
+        // WhatsApp style: chat khulte hi mera unread counter reset
+        FirebaseUtils.getContactsRef(currentUid).child(partnerUid)
+            .child("unread").setValue(0);
         setSupportActionBar(binding.toolbar);
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
@@ -202,13 +205,30 @@ public class ChatActivity extends AppCompatActivity {
         DatabaseReference ref = FirebaseUtils.getMessagesRef(chatId).push();
         m.id = ref.getKey();
         ref.setValue(m);
-        // Update lastMessage on contacts
-        Map<String, Object> meta = new HashMap<>();
-        meta.put("lastMessage", preview);
-        meta.put("lastMessageAt", System.currentTimeMillis());
-        FirebaseUtils.getContactsRef(currentUid).child(partnerUid).updateChildren(meta);
-        FirebaseUtils.getContactsRef(partnerUid).child(currentUid).updateChildren(meta);
+        // Update lastMessage on contacts (sender side: zero unread, recipient side: bump)
+        Map<String, Object> meSide = new HashMap<>();
+        meSide.put("lastMessage", preview);
+        meSide.put("lastMessageAt", System.currentTimeMillis());
+        meSide.put("unread", 0);
+        FirebaseUtils.getContactsRef(currentUid).child(partnerUid)
+            .updateChildren(meSide);
+
+        Map<String, Object> partnerSide = new HashMap<>();
+        partnerSide.put("lastMessage", preview);
+        partnerSide.put("lastMessageAt", System.currentTimeMillis());
+        partnerSide.put("unread", ServerValue.increment(1));
+        FirebaseUtils.getContactsRef(partnerUid).child(currentUid)
+            .updateChildren(partnerSide);
+
         PushNotify.notifyUser(partnerUid, currentUid, currentName, "message", preview);
+    }
+    @Override protected void onResume() {
+        super.onResume();
+        // Chat screen visible hai to unread hamesha 0 rahe
+        if (currentUid != null && partnerUid != null) {
+            FirebaseUtils.getContactsRef(currentUid).child(partnerUid)
+                .child("unread").setValue(0);
+        }
     }
     private void loadMessages() {
         FirebaseUtils.getMessagesRef(chatId).orderByChild("timestamp")

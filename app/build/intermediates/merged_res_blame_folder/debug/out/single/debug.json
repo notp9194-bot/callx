@@ -264,6 +264,10 @@
         "source": "com.callx.app-main-52:/drawable/gradient_brand.xml"
     },
     {
+        "merged": "com.callx.app-merged_res-50:/drawable_bg_unread_badge.xml.flat",
+        "source": "com.callx.app-main-52:/drawable/bg_unread_badge.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/drawable_ic_attach.xml.flat",
         "source": "com.callx.app-main-52:/drawable/ic_attach.xml"
     },
