@@ -8554,7 +8554,7 @@ jobs:
           name: callx-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
-
+ 
       - name: Commit generated project
         run: |
           git config user.name  "callx-bot"
