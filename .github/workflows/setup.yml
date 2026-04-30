@@ -3410,6 +3410,13 @@ jobs:
               // Notification action intents (handled by NotificationActionReceiver)
               public static final String ACTION_REPLY            = "com.callx.app.ACTION_REPLY";
               public static final String ACTION_MARK_READ        = "com.callx.app.ACTION_MARK_READ";
+              // Status (story) action intents
+              public static final String ACTION_STATUS_REPLY     = "com.callx.app.ACTION_STATUS_REPLY";
+              public static final String ACTION_STATUS_MARK_SEEN = "com.callx.app.ACTION_STATUS_MARK_SEEN";
+              public static final String EXTRA_STATUS_OWNER_UID  = "extra_status_owner_uid";
+              public static final String EXTRA_STATUS_ID         = "extra_status_id";
+              public static final String KEY_STATUS_TEXT_REPLY   = "key_status_text_reply";
+              public static final String GROUP_KEY_STATUS        = "callx_group_status";
               public static final String ACTION_MUTE             = "com.callx.app.ACTION_MUTE";
               public static final String ACTION_BLOCK            = "com.callx.app.ACTION_BLOCK";
               public static final String ACTION_UNBLOCK          = "com.callx.app.ACTION_UNBLOCK";
@@ -3638,6 +3645,18 @@ jobs:
               }
               public static DatabaseReference getStatusRef() {
                   return db().getReference("status");
+              }
+              // Production-grade status helpers (viewers, replies, seen)
+              public static DatabaseReference getStatusViewersRef(String ownerUid, String statusId) {
+                  return db().getReference("statusViewers").child(ownerUid).child(statusId);
+              }
+              public static DatabaseReference getStatusRepliesRef(String ownerUid, String statusId) {
+                  return db().getReference("statusReplies").child(ownerUid).child(statusId);
+              }
+              // Per-viewer aggregate "seen" map: statusSeen/{viewerUid}/{ownerUid}/{statusId} = ts
+              // Cheap to query for sorting (single read per owner) without touching viewers subtree.
+              public static DatabaseReference getStatusSeenRef(String viewerUid) {
+                  return db().getReference("statusSeen").child(viewerUid);
               }
               public static String getChatId(String uid1, String uid2) {
                   String[] ids = {uid1, uid2};
@@ -4009,12 +4028,23 @@ jobs:
                       Log.w("PushNotify", "group err: " + e.getMessage());
                   }
               }
-              public static void notifyStatus(String fromUid, String fromName) {
+              // Production-grade status fanout. Server takes care of:
+              //  - lookup of sender photo / mobile / lastSeen
+              //  - per-receiver block + perma-block guards
+              //  - stale FCM token cleanup
+              //  - collapseKey + ttl so the device shows only the freshest one
+              public static void notifyStatus(String fromUid, String fromName,
+                                              String statusId, String type,
+                                              String preview, String mediaUrl) {
                   try {
                       JSONObject body = new JSONObject()
-                          .put("fromUid", fromUid == null ? "" : fromUid)
+                          .put("fromUid",  fromUid  == null ? "" : fromUid)
                           .put("fromName", fromName == null ? "" : fromName)
-                          .put("type", "status");
+                          .put("statusId", statusId == null ? "" : statusId)
+                          .put("statusType", type == null ? "text" : type)
+                          .put("preview",  preview  == null ? "" : preview)
+                          .put("mediaUrl", mediaUrl == null ? "" : mediaUrl)
+                          .put("type",     "status");
                       Request req = new Request.Builder()
                           .url(Constants.SERVER_URL + "/notify/status")
                           .post(RequestBody.create(body.toString(),
@@ -4027,6 +4057,10 @@ jobs:
                           }
                       });
                   } catch (Exception e) {}
+              }
+              // Backwards-compat wrapper (older call sites without statusId/preview)
+              public static void notifyStatus(String fromUid, String fromName) {
+                  notifyStatus(fromUid, fromName, null, "text", null, null);
               }
               // Feature 12 — receiver ne sender ko permanently block kiya. Sender
               // ko ek baar return notification jaata hai (receiver details ke saath).
@@ -5608,12 +5642,15 @@ jobs:
           import com.callx.app.databinding.ActivityStatusViewerBinding;
           import com.callx.app.models.StatusItem;
           import com.callx.app.utils.FirebaseUtils;
+          import com.google.firebase.auth.FirebaseAuth;
           import com.google.firebase.database.*;
           import java.text.SimpleDateFormat;
           import java.util.ArrayList;
           import java.util.Date;
+          import java.util.HashMap;
           import java.util.List;
           import java.util.Locale;
+          import java.util.Map;
 
           public class StatusViewerActivity extends AppCompatActivity {
               private ActivityStatusViewerBinding binding;
@@ -5637,13 +5674,16 @@ jobs:
                       WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
                   binding = ActivityStatusViewerBinding.inflate(getLayoutInflater());
                   setContentView(binding.getRoot());
-                  String ownerUid = getIntent().getStringExtra("ownerUid");
+                  ownerUid = getIntent().getStringExtra("ownerUid");
+                  jumpToStatusId = getIntent().getStringExtra("statusId"); // optional deep-link
                   if (ownerUid == null) { finish(); return; }
                   binding.btnCloseStatus.setOnClickListener(v -> closeWithSlide());
                   setupGestures();
                   setupReply();
                   load(ownerUid);
               }
+              private String ownerUid;
+              private String jumpToStatusId;
 
               private void setupGestures() {
                   // Tap right zone -> next
@@ -5696,18 +5736,83 @@ jobs:
               private final Runnable pauseRun = () -> { paused = true; pause(); };
 
               private void setupReply() {
-                  binding.btnSendReply.setOnClickListener(v -> {
-                      String txt = binding.etReply.getText() == null ? "" : binding.etReply.getText().toString().trim();
-                      if (TextUtils.isEmpty(txt)) return;
-                      Toast.makeText(this, "Reply sent", Toast.LENGTH_SHORT).show();
-                      binding.etReply.setText("");
-                      InputMethodManager imm = (InputMethodManager)
-                          getSystemService(INPUT_METHOD_SERVICE);
-                      if (imm != null) imm.hideSoftInputFromWindow(binding.etReply.getWindowToken(), 0);
+                  binding.btnSendReply.setOnClickListener(v -> sendReply());
+                  binding.etReply.setOnEditorActionListener((tv, action, ev) -> {
+                      sendReply();
+                      return true;
                   });
                   binding.etReply.setOnFocusChangeListener((v, has) -> {
                       if (has) pause(); else resume();
                   });
+              }
+
+              private void sendReply() {
+                  String txt = binding.etReply.getText() == null ? ""
+                      : binding.etReply.getText().toString().trim();
+                  if (TextUtils.isEmpty(txt) || idx >= items.size()) return;
+                  StatusItem cur = items.get(idx);
+                  if (cur.id == null || cur.ownerUid == null) return;
+                  if (FirebaseAuth.getInstance().getCurrentUser() == null) {
+                      Toast.makeText(this, "Login required", Toast.LENGTH_SHORT).show();
+                      return;
+                  }
+                  String myUid  = FirebaseAuth.getInstance().getCurrentUser().getUid();
+                  String myName = FirebaseUtils.getCurrentName();
+                  Map<String, Object> reply = new HashMap<>();
+                  reply.put("fromUid",   myUid);
+                  reply.put("fromName",  myName);
+                  reply.put("text",      txt);
+                  reply.put("statusId",  cur.id);
+                  reply.put("timestamp", System.currentTimeMillis());
+                  // Persist to Firebase under the status owner
+                  FirebaseUtils.getStatusRepliesRef(cur.ownerUid, cur.id)
+                      .push().setValue(reply)
+                      .addOnSuccessListener(x -> {
+                          Toast.makeText(this, "Reply sent", Toast.LENGTH_SHORT).show();
+                          binding.etReply.setText("");
+                          InputMethodManager imm = (InputMethodManager)
+                              getSystemService(INPUT_METHOD_SERVICE);
+                          if (imm != null) {
+                              imm.hideSoftInputFromWindow(binding.etReply.getWindowToken(), 0);
+                          }
+                          binding.etReply.clearFocus();
+                          // Also push it as a normal DM so the owner gets it as a chat message
+                          try {
+                              String chatId = FirebaseUtils.getChatId(myUid, cur.ownerUid);
+                              Map<String, Object> msg = new HashMap<>();
+                              msg.put("fromUid",   myUid);
+                              msg.put("toUid",     cur.ownerUid);
+                              msg.put("text",      "Replied to your status: " + txt);
+                              msg.put("type",      "status_reply");
+                              msg.put("timestamp", System.currentTimeMillis());
+                              msg.put("statusId",  cur.id);
+                              if (cur.mediaUrl != null) msg.put("statusMediaUrl", cur.mediaUrl);
+                              FirebaseUtils.getMessagesRef(chatId).push().setValue(msg);
+                          } catch (Exception ignored) {}
+                      })
+                      .addOnFailureListener(e ->
+                          Toast.makeText(this, "Reply fail: " + e.getMessage(),
+                              Toast.LENGTH_SHORT).show());
+              }
+
+              private void markCurrentSeen() {
+                  if (idx >= items.size()) return;
+                  StatusItem cur = items.get(idx);
+                  if (cur.id == null || cur.ownerUid == null) return;
+                  if (FirebaseAuth.getInstance().getCurrentUser() == null) return;
+                  String myUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+                  if (myUid.equals(cur.ownerUid)) return; // don't mark own status as seen
+                  long now = System.currentTimeMillis();
+                  // 1) Public viewer entry under owner: who saw it + when (for owner UI later)
+                  Map<String, Object> v = new HashMap<>();
+                  v.put("uid", myUid);
+                  v.put("name", FirebaseUtils.getCurrentName());
+                  v.put("ts", now);
+                  FirebaseUtils.getStatusViewersRef(cur.ownerUid, cur.id)
+                      .child(myUid).setValue(v);
+                  // 2) Private aggregate map for fast unseen-sorting on my client
+                  FirebaseUtils.getStatusSeenRef(myUid)
+                      .child(cur.ownerUid).child(cur.id).setValue(now);
               }
 
               private void load(String ownerUid) {
@@ -5719,9 +5824,25 @@ jobs:
                                   StatusItem s = c.getValue(StatusItem.class);
                                   if (s == null) continue;
                                   if (s.expiresAt != null && s.expiresAt < now) continue;
+                                  if (s.id == null) s.id = c.getKey();
                                   items.add(s);
                               }
                               if (items.isEmpty()) { finish(); return; }
+                              // Oldest -> newest, like WhatsApp/Insta playback order
+                              java.util.Collections.sort(items, (a, b) -> {
+                                  long at = a.timestamp == null ? 0 : a.timestamp;
+                                  long bt = b.timestamp == null ? 0 : b.timestamp;
+                                  return Long.compare(at, bt);
+                              });
+                              // Deep-link: jump straight to the requested statusId
+                              if (jumpToStatusId != null) {
+                                  for (int i = 0; i < items.size(); i++) {
+                                      if (jumpToStatusId.equals(items.get(i).id)) {
+                                          idx = i;
+                                          break;
+                                      }
+                                  }
+                              }
                               StatusItem first = items.get(0);
                               binding.tvOwner.setText(first.ownerName == null ? "Status" : first.ownerName);
                               if (first.ownerPhoto != null && !first.ownerPhoto.isEmpty()) {
@@ -5729,6 +5850,10 @@ jobs:
                                       .circleCrop().into(binding.ivOwner);
                               }
                               buildSegments();
+                              // Pre-fill segments left of jump target as fully consumed
+                              for (int i = 0; i < idx && i < segments.size(); i++) {
+                                  segments.get(i).setProgress(1000);
+                              }
                               showCurrent();
                           }
                           @Override public void onCancelled(DatabaseError e) { finish(); }
@@ -5764,6 +5889,8 @@ jobs:
 
                   StatusItem s = items.get(idx);
                   binding.tvOwnerTime.setText(s.timestamp != null ? fmt.format(new Date(s.timestamp)) : "");
+                  // Persist seen for this exact status (fires Firebase write — fragment will reconcile)
+                  markCurrentSeen();
                   hideAll();
                   // Fade-in transition for the media container
                   AlphaAnimation fade = new AlphaAnimation(0f, 1f);
@@ -5966,7 +6093,18 @@ jobs:
                   s.put("timestamp", now);
                   s.put("expiresAt", now + Constants.STATUS_TTL_MS);
                   ref.setValue(s).addOnSuccessListener(x -> {
-                      PushNotify.notifyStatus(uid, name);
+                      // Build a short preview for the notification body
+                      String preview;
+                      if ("text".equals(type)) {
+                          preview = txt == null ? "" : (txt.length() > 80 ? txt.substring(0, 80) + "…" : txt);
+                      } else if ("image".equals(type)) {
+                          preview = "📷 Photo";
+                      } else if ("video".equals(type)) {
+                          preview = "🎥 Video";
+                      } else {
+                          preview = "New status";
+                      }
+                      PushNotify.notifyStatus(uid, name, ref.getKey(), type, preview, mediaUrl);
                       Toast.makeText(this, "Status post ho gaya", Toast.LENGTH_SHORT).show();
                       finish();
                   });
@@ -6564,8 +6702,14 @@ jobs:
           public class StatusListAdapter extends RecyclerView.Adapter<StatusListAdapter.VH> {
               private final List<StatusItem> entries;
               private final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm", Locale.getDefault());
-              private final Set<String> seenUids = new HashSet<>();
-              public StatusListAdapter(List<StatusItem> entries) { this.entries = entries; }
+              private final Set<String> seenOwners; // shared with fragment
+              public StatusListAdapter(List<StatusItem> entries) {
+                  this(entries, new HashSet<>());
+              }
+              public StatusListAdapter(List<StatusItem> entries, Set<String> seenOwners) {
+                  this.entries = entries;
+                  this.seenOwners = seenOwners;
+              }
               @NonNull @Override
               public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
                   View v = LayoutInflater.from(parent.getContext())
@@ -6592,8 +6736,8 @@ jobs:
                       h.ivBg.setImageResource(R.drawable.status_card_placeholder);
                   }
 
-                  // Ring color: green = unseen, grey = seen
-                  boolean seen = s.ownerUid != null && seenUids.contains(s.ownerUid);
+                  // Ring color: green = unseen, grey = seen (driven by Firebase via fragment)
+                  boolean seen = s.ownerUid != null && seenOwners.contains(s.ownerUid);
                   h.ring.setBackgroundResource(seen
                       ? R.drawable.circle_status_seen
                       : R.drawable.circle_status_unseen);
@@ -6612,7 +6756,9 @@ jobs:
                       return false; // let click event pass
                   });
                   h.itemView.setOnClickListener(v -> {
-                      if (s.ownerUid != null) seenUids.add(s.ownerUid);
+                      // Optimistically gray the ring; the viewer will persist `seen` to Firebase
+                      // per-status, and the fragment listener will reconcile shortly after.
+                      if (s.ownerUid != null) seenOwners.add(s.ownerUid);
                       h.ring.setBackgroundResource(R.drawable.circle_status_seen);
                       Intent i = new Intent(ctx, StatusViewerActivity.class);
                       i.putExtra("ownerUid", s.ownerUid);
@@ -7291,16 +7437,28 @@ jobs:
           import com.callx.app.models.StatusItem;
           import com.callx.app.utils.FirebaseUtils;
           import com.google.android.material.floatingactionbutton.FloatingActionButton;
+          import com.google.firebase.auth.FirebaseAuth;
           import com.google.firebase.database.*;
           import java.util.ArrayList;
+          import java.util.Collections;
+          import java.util.Comparator;
           import java.util.HashMap;
+          import java.util.HashSet;
           import java.util.List;
           import java.util.Map;
+          import java.util.Set;
           public class StatusFragment extends Fragment {
               private final List<StatusItem> statuses = new ArrayList<>();
               private StatusListAdapter adapter;
               private View emptyView;
               private TextView tvCount;
+              private final Set<String> seenStatusIds = new HashSet<>();   // statuses already seen by me
+              private final Set<String> seenOwners    = new HashSet<>();   // owners whose latest status is seen
+              private ValueEventListener statusListener;
+              private ValueEventListener seenListener;
+              private DatabaseReference statusRef;
+              private DatabaseReference seenRef;
+
               @Override
               public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup parent, Bundle s) {
                   View v = inflater.inflate(R.layout.fragment_status, parent, false);
@@ -7308,48 +7466,157 @@ jobs:
                   rv.setLayoutManager(new LinearLayoutManager(getContext(),
                       LinearLayoutManager.HORIZONTAL, false));
                   rv.setItemAnimator(new androidx.recyclerview.widget.DefaultItemAnimator());
-                  adapter = new StatusListAdapter(statuses);
+                  adapter = new StatusListAdapter(statuses, seenOwners);
                   rv.setAdapter(adapter);
+
+                  // Fix #3 — horizontal swipe inside the cards must NOT bubble up to the
+                  // ViewPager / parent NestedScrollView. Disallow parent intercept while the
+                  // user is dragging horizontally on the RecyclerView.
+                  rv.addOnItemTouchListener(new RecyclerView.OnItemTouchListener() {
+                      private float startX, startY;
+                      @Override public boolean onInterceptTouchEvent(@NonNull RecyclerView r,
+                                                                     @NonNull MotionEvent e) {
+                          switch (e.getActionMasked()) {
+                              case MotionEvent.ACTION_DOWN:
+                                  startX = e.getX(); startY = e.getY();
+                                  r.getParent().requestDisallowInterceptTouchEvent(true);
+                                  break;
+                              case MotionEvent.ACTION_MOVE:
+                                  float dx = Math.abs(e.getX() - startX);
+                                  float dy = Math.abs(e.getY() - startY);
+                                  // Lock horizontal — parent ko vertical scroll do, hum horizontal
+                                  // ko consume karenge.
+                                  if (dx > dy) r.getParent().requestDisallowInterceptTouchEvent(true);
+                                  break;
+                              case MotionEvent.ACTION_UP:
+                              case MotionEvent.ACTION_CANCEL:
+                                  r.getParent().requestDisallowInterceptTouchEvent(false);
+                                  break;
+                          }
+                          return false;
+                      }
+                      @Override public void onTouchEvent(@NonNull RecyclerView r,
+                                                         @NonNull MotionEvent e) {}
+                      @Override public void onRequestDisallowInterceptTouchEvent(boolean d) {}
+                  });
+
                   emptyView = v.findViewById(R.id.empty_status);
                   tvCount = v.findViewById(R.id.tv_status_count);
                   FloatingActionButton fab = v.findViewById(R.id.fab_new_status);
                   fab.setOnClickListener(x ->
                       startActivity(new Intent(getContext(), NewStatusActivity.class)));
-                  load();
+                  attachListeners();
                   return v;
               }
-              private void load() {
-                  FirebaseUtils.getStatusRef().addValueEventListener(new ValueEventListener() {
-                      @Override public void onDataChange(DataSnapshot snap) {
-                          statuses.clear();
-                          long now = System.currentTimeMillis();
-                          Map<String, StatusItem> latestByUser = new HashMap<>();
-                          for (DataSnapshot user : snap.getChildren()) {
-                              StatusItem latest = null;
-                              for (DataSnapshot st : user.getChildren()) {
-                                  StatusItem item = st.getValue(StatusItem.class);
-                                  if (item == null) continue;
-                                  if (item.expiresAt != null && item.expiresAt < now) continue;
-                                  if (latest == null ||
-                                      (item.timestamp != null && latest.timestamp != null
-                                          && item.timestamp > latest.timestamp)) {
-                                      latest = item;
+
+              private void attachListeners() {
+                  // Listen to my "seen" map first so sorting is correct on first paint
+                  if (FirebaseAuth.getInstance().getCurrentUser() != null) {
+                      String myUid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+                      seenRef = FirebaseUtils.getStatusSeenRef(myUid);
+                      seenListener = seenRef.addValueEventListener(new ValueEventListener() {
+                          @Override public void onDataChange(DataSnapshot snap) {
+                              seenStatusIds.clear();
+                              for (DataSnapshot owner : snap.getChildren()) {
+                                  for (DataSnapshot st : owner.getChildren()) {
+                                      seenStatusIds.add(st.getKey());
                                   }
                               }
-                              if (latest != null) latestByUser.put(user.getKey(), latest);
+                              applyData(); // re-sort with fresh seen state
                           }
-                          statuses.addAll(latestByUser.values());
-                          adapter.notifyDataSetChanged();
-                          if (emptyView != null) {
-                              emptyView.setVisibility(statuses.isEmpty() ? View.VISIBLE : View.GONE);
-                          }
-                          if (tvCount != null) {
-                              int n = statuses.size();
-                              tvCount.setText(n == 0 ? "" : (n + (n == 1 ? " update" : " updates")));
-                          }
+                          @Override public void onCancelled(DatabaseError e) {}
+                      });
+                  }
+                  statusRef = FirebaseUtils.getStatusRef();
+                  statusListener = statusRef.addValueEventListener(new ValueEventListener() {
+                      @Override public void onDataChange(DataSnapshot snap) {
+                          rawSnapshot = snap;
+                          applyData();
                       }
                       @Override public void onCancelled(DatabaseError e) {}
                   });
+              }
+
+              private DataSnapshot rawSnapshot;
+
+              private void applyData() {
+                  if (rawSnapshot == null) return;
+                  statuses.clear();
+                  seenOwners.clear();
+                  long now = System.currentTimeMillis();
+                  String myUid = FirebaseAuth.getInstance().getCurrentUser() == null
+                      ? "" : FirebaseAuth.getInstance().getCurrentUser().getUid();
+
+                  Map<String, StatusItem> latestByUser = new HashMap<>();
+                  Map<String, Boolean> ownerAllSeen = new HashMap<>();
+
+                  for (DataSnapshot user : rawSnapshot.getChildren()) {
+                      StatusItem latest = null;
+                      boolean allSeen = true;
+                      boolean anyValid = false;
+                      String ownerUid = user.getKey();
+                      for (DataSnapshot st : user.getChildren()) {
+                          StatusItem item = st.getValue(StatusItem.class);
+                          if (item == null) continue;
+                          if (item.expiresAt != null && item.expiresAt < now) continue;
+                          anyValid = true;
+                          if (item.id != null && !seenStatusIds.contains(item.id)) {
+                              allSeen = false;
+                          }
+                          if (latest == null ||
+                              (item.timestamp != null && latest.timestamp != null
+                                  && item.timestamp > latest.timestamp)) {
+                              latest = item;
+                          }
+                      }
+                      if (anyValid && latest != null) {
+                          latestByUser.put(ownerUid, latest);
+                          ownerAllSeen.put(ownerUid, allSeen);
+                          if (allSeen) seenOwners.add(ownerUid);
+                      }
+                  }
+
+                  statuses.addAll(latestByUser.values());
+                  // Sort: my own first → unseen by recency → seen by recency
+                  final String myUidF = myUid;
+                  Collections.sort(statuses, new Comparator<StatusItem>() {
+                      @Override public int compare(StatusItem a, StatusItem b) {
+                          int ao = myUidF.equals(a.ownerUid) ? 0 : 1;
+                          int bo = myUidF.equals(b.ownerUid) ? 0 : 1;
+                          if (ao != bo) return Integer.compare(ao, bo);
+                          boolean as = Boolean.TRUE.equals(ownerAllSeen.get(a.ownerUid));
+                          boolean bs = Boolean.TRUE.equals(ownerAllSeen.get(b.ownerUid));
+                          if (as != bs) return as ? 1 : -1; // unseen first
+                          long at = a.timestamp == null ? 0 : a.timestamp;
+                          long bt = b.timestamp == null ? 0 : b.timestamp;
+                          return Long.compare(bt, at); // newer first
+                      }
+                  });
+
+                  adapter.notifyDataSetChanged();
+                  if (emptyView != null) {
+                      emptyView.setVisibility(statuses.isEmpty() ? View.VISIBLE : View.GONE);
+                  }
+                  if (tvCount != null) {
+                      int n = statuses.size();
+                      tvCount.setText(n == 0 ? "" : (n + (n == 1 ? " update" : " updates")));
+                  }
+              }
+
+              @Override public void onResume() {
+                  super.onResume();
+                  // Re-apply on resume so freshly-seen ring colors update immediately
+                  applyData();
+              }
+
+              @Override public void onDestroyView() {
+                  if (statusRef != null && statusListener != null) {
+                      statusRef.removeEventListener(statusListener);
+                  }
+                  if (seenRef != null && seenListener != null) {
+                      seenRef.removeEventListener(seenListener);
+                  }
+                  super.onDestroyView();
               }
           }
           ENDOFFILE
@@ -8448,21 +8715,142 @@ jobs:
                   }
               }
               private void showStatus(Map<String, String> data) {
-                  String name = data.getOrDefault("fromName", "Friend");
-                  Intent i = new Intent(this, MainActivity.class);
-                  PendingIntent pi = PendingIntent.getActivity(this, 0, i,
+                  final String fromUid    = data.getOrDefault("fromUid",    "");
+                  final String name       = data.getOrDefault("fromName",   "Friend");
+                  final String statusId   = data.getOrDefault("statusId",   "");
+                  final String statusType = data.getOrDefault("statusType", "text");
+                  final String preview    = data.getOrDefault("preview",    "");
+                  final String mediaUrl   = data.getOrDefault("mediaUrl",   "");
+                  final String senderPhoto= data.getOrDefault("senderPhoto", "");
+
+                  if (fromUid.isEmpty()) return;
+
+                  // Note: perma-block / block guard is enforced on the server before
+                  // the FCM is sent — no client-side guard needed here.
+
+                  // Stable per-sender notif id so multiple statuses from same user
+                  // collapse into one tappable notification (latest-wins).
+                  final int notifId = ("status_" + fromUid).hashCode();
+
+                  // Deep-link straight into the viewer, jumping to the right status
+                  Intent open = new Intent(this,
+                      com.callx.app.activities.StatusViewerActivity.class);
+                  open.setAction(Intent.ACTION_VIEW);
+                  open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                  open.putExtra("ownerUid", fromUid);
+                  if (!statusId.isEmpty()) open.putExtra("statusId", statusId);
+                  PendingIntent piOpen = PendingIntent.getActivity(this, notifId, open,
                       PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+                  // "Mark as seen" — fires through NotificationActionReceiver
+                  Intent seenI = new Intent(this,
+                      com.callx.app.receivers.NotificationActionReceiver.class)
+                      .setAction(Constants.ACTION_STATUS_MARK_SEEN)
+                      .putExtra(Constants.EXTRA_STATUS_OWNER_UID, fromUid)
+                      .putExtra(Constants.EXTRA_STATUS_ID,        statusId)
+                      .putExtra(Constants.EXTRA_NOTIF_ID,         notifId);
+                  PendingIntent piSeen = PendingIntent.getBroadcast(this, notifId + 1, seenI,
+                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+                  // "Reply" inline (RemoteInput)
+                  androidx.core.app.RemoteInput remote = new androidx.core.app.RemoteInput
+                      .Builder(Constants.KEY_STATUS_TEXT_REPLY)
+                      .setLabel("Reply…")
+                      .build();
+                  Intent replyI = new Intent(this,
+                      com.callx.app.receivers.NotificationActionReceiver.class)
+                      .setAction(Constants.ACTION_STATUS_REPLY)
+                      .putExtra(Constants.EXTRA_PARTNER_UID,      fromUid)
+                      .putExtra(Constants.EXTRA_PARTNER_NAME,     name)
+                      .putExtra(Constants.EXTRA_STATUS_OWNER_UID, fromUid)
+                      .putExtra(Constants.EXTRA_STATUS_ID,        statusId)
+                      .putExtra(Constants.EXTRA_NOTIF_ID,         notifId);
+                  PendingIntent piReply = PendingIntent.getBroadcast(this, notifId + 2, replyI,
+                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
+                  NotificationCompat.Action replyAction = new NotificationCompat.Action.Builder(
+                          R.drawable.ic_status_notification, "Reply", piReply)
+                      .addRemoteInput(remote)
+                      .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+                      .setShowsUserInterface(false)
+                      .build();
+                  NotificationCompat.Action seenAction = new NotificationCompat.Action.Builder(
+                          R.drawable.ic_status_notification, "Mark as seen", piSeen)
+                      .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+                      .build();
+
+                  // Body text — Hinglish, with media-type emoji
+                  String body;
+                  if ("image".equals(statusType))      body = preview.isEmpty() ? "📷 Naya photo status" : preview;
+                  else if ("video".equals(statusType)) body = preview.isEmpty() ? "🎥 Naya video status" : preview;
+                  else                                  body = preview.isEmpty() ? "Naya status post kiya" : preview;
+
                   NotificationCompat.Builder b = new NotificationCompat.Builder(this,
                           Constants.CHANNEL_STATUS)
                       .setSmallIcon(R.drawable.ic_status_notification)
                       .setContentTitle(name)
-                      .setContentText("Naya status post kiya")
+                      .setContentText(body)
+                      .setSubText("Status")
+                      .setCategory(NotificationCompat.CATEGORY_SOCIAL)
                       .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                       .setAutoCancel(true)
-                      .setContentIntent(pi);
+                      .setContentIntent(piOpen)
+                      .setGroup(Constants.GROUP_KEY_STATUS)
+                      .setWhen(System.currentTimeMillis())
+                      .setShowWhen(true)
+                      .addAction(replyAction)
+                      .addAction(seenAction);
+
+                  // Try to load sender avatar + status preview synchronously (we are on
+                  // the FCM background thread, so blocking here is safe and standard).
+                  try {
+                      if (!senderPhoto.isEmpty()) {
+                          android.graphics.Bitmap avatar =
+                              com.bumptech.glide.Glide.with(getApplicationContext())
+                                  .asBitmap()
+                                  .load(senderPhoto)
+                                  .circleCrop()
+                                  .submit(128, 128)
+                                  .get(2, java.util.concurrent.TimeUnit.SECONDS);
+                          if (avatar != null) b.setLargeIcon(avatar);
+                      }
+                  } catch (Exception ignored) {}
+                  try {
+                      if (("image".equals(statusType) || "video".equals(statusType))
+                              && !mediaUrl.isEmpty()) {
+                          android.graphics.Bitmap big =
+                              com.bumptech.glide.Glide.with(getApplicationContext())
+                                  .asBitmap()
+                                  .load(mediaUrl)
+                                  .submit(640, 640)
+                                  .get(3, java.util.concurrent.TimeUnit.SECONDS);
+                          if (big != null) {
+                              b.setStyle(new NotificationCompat.BigPictureStyle()
+                                  .bigPicture(big)
+                                  .setBigContentTitle(name)
+                                  .setSummaryText(body));
+                          }
+                      } else if (!preview.isEmpty()) {
+                          b.setStyle(new NotificationCompat.BigTextStyle()
+                              .bigText(preview)
+                              .setBigContentTitle(name));
+                      }
+                  } catch (Exception ignored) {}
+
+                  // Group summary so multiple senders' statuses stack neatly
+                  NotificationCompat.Builder summary = new NotificationCompat.Builder(this,
+                          Constants.CHANNEL_STATUS)
+                      .setSmallIcon(R.drawable.ic_status_notification)
+                      .setContentTitle("New statuses")
+                      .setStyle(new NotificationCompat.InboxStyle()
+                          .setSummaryText("Status updates"))
+                      .setGroup(Constants.GROUP_KEY_STATUS)
+                      .setGroupSummary(true)
+                      .setAutoCancel(true);
+
                   NotificationManager nm = (NotificationManager)
                       getSystemService(Context.NOTIFICATION_SERVICE);
-                  nm.notify(new Random().nextInt(99999), b.build());
+                  nm.notify(notifId, b.build());
+                  nm.notify(Constants.GROUP_KEY_STATUS.hashCode(), summary.build());
               }
           }
           ENDOFFILE
@@ -8794,43 +9182,116 @@ jobs:
           });
 
           // ---- Notify status (fanout to all contacts of poster) ----
+          // Production-grade:
+          //  • per-receiver perma-block + block guard (drops silently)
+          //  • sender photo / mobile / lastSeen attached to payload (so the device
+          //    can render avatar + subtext without an extra read)
+          //  • rich preview (statusId / statusType / mediaUrl / preview text)
+          //  • collapseKey + ttl so multiple posts collapse to the freshest one
+          //  • parallel fanout (Promise.all) instead of sequential await
+          //  • stale FCM token cleanup (auto-removes dead tokens from RTDB)
           app.post("/notify/status", async (req, res) => {
             if (!firebaseReady)
               return res.status(503).json({ error: "Firebase not configured" });
-            const { fromUid, fromName } = req.body || {};
+            const {
+              fromUid, fromName,
+              statusId = "", statusType = "text",
+              preview = "", mediaUrl = ""
+            } = req.body || {};
             if (!fromUid) return res.status(400).json({ error: "fromUid required" });
             try {
+              // 1) Sender profile (single read) — for avatar / subtext
+              const senderSnap = await admin.database()
+                .ref("users/" + fromUid).once("value");
+              const sender = senderSnap.val() || {};
+              const senderPhoto    = String(sender.photoUrl  || sender.photo || "");
+              const senderMobile   = String(sender.mobile    || "");
+              const senderLastSeen = String(sender.lastSeen  || "");
+              const safeName       = String(fromName || sender.name || "Friend");
+
+              // 2) Contacts of poster
               const cSnap = await admin.database()
                 .ref("contacts/" + fromUid).once("value");
-              const contacts = cSnap.val() || {};
-              const uids = Object.keys(contacts);
-              const tokens = [];
-              for (const uid of uids) {
-                const us = await admin.database().ref("users/" + uid).once("value");
-                const t = us.val() && us.val().fcmToken;
-                if (t) tokens.push(t);
-              }
-              if (!tokens.length) return res.json({ ok: true, sent: 0 });
-              let sent = 0;
-              for (const tk of tokens) {
+              const uids = Object.keys(cSnap.val() || {});
+              if (!uids.length) return res.json({ ok: true, sent: 0, dropped: 0, eligible: 0 });
+
+              // 3) Body text per type (Hinglish, with media-aware emoji)
+              const body = statusType === "image"
+                ? (preview || "📷 Naya photo status")
+                : statusType === "video"
+                  ? (preview || "🎥 Naya video status")
+                  : (preview || "Naya status post kiya");
+
+              let sent = 0, dropped = 0;
+              const staleTokens = [];
+
+              await Promise.all(uids.map(async (uid) => {
                 try {
+                  // Per-receiver guards (parallel reads)
+                  const [userSnap, blockedSnap, permaSnap] = await Promise.all([
+                    admin.database().ref("users/" + uid).once("value"),
+                    admin.database().ref("blocked/" + uid + "/" + fromUid).once("value"),
+                    admin.database().ref("permaBlocked/" + uid + "/" + fromUid).once("value"),
+                  ]);
+                  if (blockedSnap.val() === true || permaSnap.val() === true) {
+                    dropped++; return;
+                  }
+                  const u = userSnap.val() || {};
+                  const tk = u.fcmToken;
+                  if (!tk) { dropped++; return; }
+
                   await admin.messaging().send({
                     token: tk,
                     data: {
-                      type:     "status",
-                      fromUid:  String(fromUid),
-                      fromName: String(fromName || "Friend"),
-                      text:     "Naya status post kiya"
+                      type:           "status",
+                      fromUid:        String(fromUid),
+                      fromName:       safeName,
+                      statusId:       String(statusId),
+                      statusType:     String(statusType),
+                      preview:        String(body),
+                      mediaUrl:       String(mediaUrl),
+                      senderPhoto:    senderPhoto,
+                      senderMobile:   senderMobile,
+                      senderLastSeen: senderLastSeen
                     },
-                    android: { priority: "high" }
+                    android: {
+                      priority: "high",
+                      // One stack-able notification per poster (latest wins)
+                      collapseKey: "stat_" + fromUid,
+                      ttl: 24 * 60 * 60 * 1000
+                    }
                   });
                   sent++;
                 } catch (e) {
-                  console.warn("status send fail:", e.message);
+                  const code = e && (e.code || (e.errorInfo && e.errorInfo.code));
+                  if (code === "messaging/registration-token-not-registered" ||
+                      code === "messaging/invalid-registration-token") {
+                    staleTokens.push(uid);
+                  } else {
+                    console.warn("status send fail (" + uid + "):",
+                      e && e.message ? e.message : e);
+                  }
+                  dropped++;
                 }
-              }
-              res.json({ ok: true, sent });
+              }));
+
+              // 4) Best-effort stale-token cleanup
+              try {
+                for (const uid of staleTokens) {
+                  await admin.database()
+                    .ref("users/" + uid + "/fcmToken").remove();
+                }
+              } catch (_) { /* ignore */ }
+
+              res.json({
+                ok: true,
+                sent,
+                dropped,
+                eligible: uids.length,
+                staleCleaned: staleTokens.length
+              });
             } catch (e) {
+              console.error("status notify err:", e.message);
               res.status(500).json({ error: e.message });
             }
           });
@@ -9000,6 +9461,79 @@ jobs:
                       Toast.makeText(context, "Unblocked", Toast.LENGTH_SHORT).show();
                       return;
                   }
+                  // ==================== STATUS NOTIFICATION ACTIONS ====================
+                  // "Mark as seen" from notification — write to statusSeen + statusViewers
+                  if (Constants.ACTION_STATUS_MARK_SEEN.equals(action)) {
+                      String ownerUid = intent.getStringExtra(Constants.EXTRA_STATUS_OWNER_UID);
+                      String statusId = intent.getStringExtra(Constants.EXTRA_STATUS_ID);
+                      if (ownerUid != null && statusId != null && !statusId.isEmpty()) {
+                          long now = System.currentTimeMillis();
+                          Map<String, Object> v = new HashMap<>();
+                          v.put("uid",  myUid);
+                          v.put("name", myName);
+                          v.put("ts",   now);
+                          FirebaseUtils.getStatusViewersRef(ownerUid, statusId)
+                              .child(myUid).setValue(v);
+                          FirebaseUtils.getStatusSeenRef(myUid)
+                              .child(ownerUid).child(statusId).setValue(now);
+                      }
+                      if (nm != null) nm.cancel(notifId);
+                      return;
+                  }
+                  // Inline "Reply" to a status — persist + push to owner
+                  if (Constants.ACTION_STATUS_REPLY.equals(action)) {
+                      Bundle remote = RemoteInput.getResultsFromIntent(intent);
+                      if (remote == null) return;
+                      CharSequence rep = remote.getCharSequence(Constants.KEY_STATUS_TEXT_REPLY);
+                      if (rep == null) return;
+                      String text = rep.toString().trim();
+                      String ownerUid = intent.getStringExtra(Constants.EXTRA_STATUS_OWNER_UID);
+                      String statusId = intent.getStringExtra(Constants.EXTRA_STATUS_ID);
+                      if (text.isEmpty() || ownerUid == null) return;
+                      long now = System.currentTimeMillis();
+                      Map<String, Object> reply = new HashMap<>();
+                      reply.put("fromUid",   myUid);
+                      reply.put("fromName",  myName);
+                      reply.put("text",      text);
+                      reply.put("statusId",  statusId == null ? "" : statusId);
+                      reply.put("timestamp", now);
+                      if (statusId != null && !statusId.isEmpty()) {
+                          FirebaseUtils.getStatusRepliesRef(ownerUid, statusId).push()
+                              .setValue(reply);
+                      }
+                      // Also drop into the DM thread so it shows up as a chat message
+                      try {
+                          String chatIdR = FirebaseUtils.getChatId(myUid, ownerUid);
+                          DatabaseReference msgRef = FirebaseUtils.getMessagesRef(chatIdR).push();
+                          Map<String, Object> m = new HashMap<>();
+                          m.put("id",         msgRef.getKey());
+                          m.put("senderId",   myUid);
+                          m.put("senderName", myName);
+                          m.put("text",       "↩ Status reply: " + text);
+                          m.put("type",       "status_reply");
+                          m.put("statusId",   statusId == null ? "" : statusId);
+                          m.put("timestamp",  now);
+                          msgRef.setValue(m);
+                          // Update last-message + unread on both sides
+                          Map<String, Object> meSide = new HashMap<>();
+                          meSide.put("lastMessage",   text);
+                          meSide.put("lastMessageAt", now);
+                          meSide.put("unread",        0);
+                          FirebaseUtils.getContactsRef(myUid).child(ownerUid)
+                              .updateChildren(meSide);
+                          Map<String, Object> partnerSide = new HashMap<>();
+                          partnerSide.put("lastMessage",   text);
+                          partnerSide.put("lastMessageAt", now);
+                          partnerSide.put("unread",        ServerValue.increment(1));
+                          FirebaseUtils.getContactsRef(ownerUid).child(myUid)
+                              .updateChildren(partnerSide);
+                          PushNotify.notifyMessage(ownerUid, myUid, myName, chatIdR,
+                              msgRef.getKey(), text, "status_reply", "");
+                      } catch (Exception ignored) {}
+                      if (nm != null) nm.cancel(notifId);
+                      return;
+                  }
+
                   if (Constants.ACTION_REPLY.equals(action)) {
                       Bundle remote = RemoteInput.getResultsFromIntent(intent);
                       if (remote == null) return;
