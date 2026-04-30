@@ -16,6 +16,22 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-read-only: false
+
       - name: Create Full Project Structure
         env:
           RUN_NUM: ${{ github.run_number }}
@@ -106,7 +122,6 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
-                  maven { url "https://repo.getstream.io/artifactory/libs-release/" }
                   maven { url "https://jitpack.io" }
               }
           }
@@ -197,6 +212,9 @@ jobs:
               implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
               implementation 'androidx.biometric:biometric:1.1.0'
               implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+              implementation 'androidx.lifecycle:lifecycle-process:2.7.0'
+              implementation 'androidx.lifecycle:lifecycle-runtime:2.7.0'
+              implementation 'androidx.lifecycle:lifecycle-common:2.7.0'
 
               implementation platform('com.google.firebase:firebase-bom:32.7.0')
               implementation 'com.google.firebase:firebase-auth'
@@ -213,7 +231,7 @@ jobs:
               implementation 'com.github.bumptech.glide:glide:4.16.0'
               annotationProcessor 'com.github.bumptech.glide:compiler:4.16.0'
               implementation 'de.hdodenhof:circleimageview:3.1.0'
-              implementation 'com.github.masoudss:WaveformSeekBar:3.1.2'
+              implementation 'com.github.massoudss:waveformSeekBar:5.0.2'
           }
           ENDOFFILE
 
@@ -387,16 +405,23 @@ jobs:
               <color name="brand_primary">#0A7CFF</color>
               <color name="brand_primary_dark">#005FCC</color>
               <color name="brand_accent">#00D4AA</color>
+              <color name="brand_gradient_start">#0A7CFF</color>
+              <color name="brand_gradient_end">#00D4AA</color>
               <color name="bg">#FFFFFF</color>
               <color name="bg_chat">#ECE5DD</color>
               <color name="surface">#F2F4F7</color>
+              <color name="surface_bg">#F8FAFC</color>
+              <color name="surface_card">#FFFFFF</color>
+              <color name="surface_input">#F1F5F9</color>
               <color name="text_primary">#0F172A</color>
               <color name="text_secondary">#64748B</color>
+              <color name="text_muted">#94A3B8</color>
               <color name="bubble_sent">#DCF8C6</color>
               <color name="bubble_received">#FFFFFF</color>
               <color name="online_green">#25D366</color>
               <color name="reject_red">#EF4444</color>
               <color name="accept_green">#22C55E</color>
+              <color name="action_call_accept">#22C55E</color>
               <color name="seen_blue">#34B7F1</color>
               <color name="reaction_bg">#F1F5F9</color>
               <color name="white">#FFFFFF</color>
@@ -412,16 +437,23 @@ jobs:
               <color name="brand_primary">#3B82F6</color>
               <color name="brand_primary_dark">#1E3A8A</color>
               <color name="brand_accent">#10B981</color>
+              <color name="brand_gradient_start">#3B82F6</color>
+              <color name="brand_gradient_end">#10B981</color>
               <color name="bg">#0B1220</color>
               <color name="bg_chat">#0E1622</color>
               <color name="surface">#1A2332</color>
+              <color name="surface_bg">#0F172A</color>
+              <color name="surface_card">#1E293B</color>
+              <color name="surface_input">#334155</color>
               <color name="text_primary">#F1F5F9</color>
               <color name="text_secondary">#94A3B8</color>
+              <color name="text_muted">#64748B</color>
               <color name="bubble_sent">#005C4B</color>
               <color name="bubble_received">#202C33</color>
               <color name="online_green">#25D366</color>
               <color name="reject_red">#F87171</color>
               <color name="accept_green">#34D399</color>
+              <color name="action_call_accept">#34D399</color>
               <color name="seen_blue">#53BDEB</color>
               <color name="reaction_bg">#1F2937</color>
               <color name="white">#FFFFFF</color>
@@ -2231,6 +2263,7 @@ jobs:
               public String photoUrl;
               public String callxId;
               public String fcmToken;
+              public String emoji;
               public Long lastSeen;
               public Boolean online;
               public Boolean privacyShowLastSeen;
@@ -2521,6 +2554,15 @@ jobs:
               public static String myUid() {
                   return FirebaseAuth.getInstance().getUid();
               }
+              public static String getCurrentUid() { return myUid(); }
+              public static String getCurrentName() {
+                  com.google.firebase.auth.FirebaseUser u = FirebaseAuth.getInstance().getCurrentUser();
+                  if (u == null) return "";
+                  String n = u.getDisplayName();
+                  if (n != null && !n.isEmpty()) return n;
+                  String e = u.getEmail();
+                  return e == null ? "" : e;
+              }
               public static DatabaseReference users()    { return db().getReference("users"); }
               public static DatabaseReference chats()    { return db().getReference("chats"); }
               public static DatabaseReference groups()   { return db().getReference("groups"); }
@@ -2532,6 +2574,17 @@ jobs:
               public static DatabaseReference blocks()   { return db().getReference("blocks"); }
               public static DatabaseReference starred()  { return db().getReference("starred"); }
               public static DatabaseReference invites()  { return db().getReference("invites"); }
+              public static DatabaseReference requests() { return db().getReference("requests"); }
+              public static DatabaseReference contacts() { return db().getReference("contacts"); }
+              public static DatabaseReference getContactsRef(String uid) {
+                  return db().getReference("contacts").child(uid);
+              }
+              public static DatabaseReference getRequestsRef(String uid) {
+                  return db().getReference("requests").child(uid);
+              }
+              public static DatabaseReference getUserRef(String uid) {
+                  return db().getReference("users").child(uid);
+              }
               public static String chatKey(String a, String b) {
                   return (a.compareTo(b) < 0) ? a + "_" + b : b + "_" + a;
               }
@@ -7265,13 +7318,12 @@ jobs:
           zipStoreBase=GRADLE_USER_HOME
           zipStorePath=wrapper/dists
           ENDOFFILE
-          # Download gradle-wrapper.jar (cached in workflow)
-          curl -sSLo gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar || true
-          cat > gradlew << 'ENDOFFILE'
-          #!/usr/bin/env sh
-          DIR="$(cd "$(dirname "$0")" >/dev/null && pwd)"
-          exec java -jar "$DIR/gradle/wrapper/gradle-wrapper.jar" "$@"
-          ENDOFFILE
+          # Download official gradle-wrapper.jar — fail loudly if it can't be fetched
+          curl -fsSLo gradle/wrapper/gradle-wrapper.jar \
+            https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar
+          # Use the official gradlew script (handles JVM flags, classpath, etc.)
+          curl -fsSLo gradlew \
+            https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradlew
           chmod +x gradlew
           cat > app/proguard-rules.pro << 'ENDOFFILE'
           -keepattributes Signature,InnerClasses,EnclosingMethod
@@ -7286,7 +7338,11 @@ jobs:
               repositories { gradlePluginPortal(); google(); mavenCentral() }
           }
           dependencyResolutionManagement {
-              repositories { google(); mavenCentral() }
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url "https://jitpack.io" }
+              }
           }
           rootProject.name = "CallX"
           include ':app'
@@ -7323,17 +7379,33 @@ jobs:
           See `server/README.md`. Required for signed Cloudinary uploads + FCM pushes.
           ENDOFFILE
 
-          # ============================================================
-          # Final build step
-          # ============================================================
-          ./gradlew assembleRelease --stacktrace || ./gradlew assembleDebug --stacktrace || true
+      - name: Clean previous build
+        run: ./gradlew clean --no-daemon
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
+
+      - name: Show generated APKs
+        if: always()
+        run: |
+          echo "=== APKs found ==="
+          find app/build/outputs/apk -name '*.apk' -exec ls -lh {} \; || echo "No APKs found"
 
       - name: Upload APK
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: CallX-v3-APK
+          name: CallX-APK-v3.0.${{ github.run_number }}
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Build Logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.run_number }}
           path: |
-            app/build/outputs/apk/**/*.apk
-            app/build/outputs/bundle/**/*.aab
-          if-no-files-found: warn
+            app/build/reports/**
+            app/build/outputs/logs/**
+          if-no-files-found: ignore
