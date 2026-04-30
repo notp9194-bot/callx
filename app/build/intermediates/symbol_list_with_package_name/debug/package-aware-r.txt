@@ -3492,6 +3492,8 @@ id btn_save
 id btn_search
 id btn_send
 id btn_signup
+id btn_sp_later
+id btn_sp_unblock
 id btn_toggle_camera
 id btn_toggle_mic
 id btn_video_call
@@ -3711,6 +3713,7 @@ id iv_image
 id iv_owner
 id iv_preview
 id iv_result_avatar
+id iv_sp_avatar
 id iv_status
 id iv_video_thumb
 id jumpToEnd
@@ -4021,6 +4024,8 @@ id tv_request_title
 id tv_result_id
 id tv_result_name
 id tv_sender_name
+id tv_sp_name
+id tv_sp_text
 id tv_status
 id tv_sub
 id tv_text_status
@@ -4204,6 +4209,7 @@ layout design_navigation_menu_item
 layout design_text_input_end_icon
 layout design_text_input_start_icon
 layout dialog_request_popup
+layout dialog_special_request
 layout exo_legacy_player_control_view
 layout exo_list_divider
 layout exo_player_control_ffwd_button

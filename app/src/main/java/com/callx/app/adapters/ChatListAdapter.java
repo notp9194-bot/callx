@@ -18,7 +18,15 @@ import java.util.Locale;
 public class ChatListAdapter extends RecyclerView.Adapter<ChatListAdapter.VH> {
     private final List<User> contacts;
     private final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm", Locale.getDefault());
+    // Feature 18/19: jin senders ne mujhe special request bheji unka set
+    private java.util.Set<String> specialRequestSenders =
+        new java.util.HashSet<>();
     public ChatListAdapter(List<User> contacts) { this.contacts = contacts; }
+    public void setSpecialRequestSenders(java.util.Set<String> set) {
+        this.specialRequestSenders = set == null
+            ? new java.util.HashSet<>() : set;
+        notifyDataSetChanged();
+    }
     @NonNull @Override
     public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View v = LayoutInflater.from(parent.getContext())
@@ -60,6 +68,19 @@ public class ChatListAdapter extends RecyclerView.Adapter<ChatListAdapter.VH> {
             h.tvUnread.setVisibility(View.GONE);
             h.tvLastMessage.setTextColor(
                 ctx.getResources().getColor(R.color.text_secondary));
+        }
+        // Feature 18/19: highlighted entry — special request sender
+        // chat list me sabse upar amber background ke saath dikhe.
+        boolean isSpecial = u.uid != null
+            && specialRequestSenders.contains(u.uid);
+        if (isSpecial) {
+            h.itemView.setBackgroundColor(0x33FFC107); // amber wash
+            h.tvLastMessage.setText("⭐ Special unblock request");
+            h.tvLastMessage.setTextColor(0xFFFF8F00);
+            h.tvName.setTextColor(
+                ctx.getResources().getColor(R.color.text_primary));
+        } else {
+            h.itemView.setBackgroundColor(0x00000000);
         }
         h.itemView.setOnClickListener(v -> {
             Intent i = new Intent(ctx, ChatActivity.class);

@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.widget.Toast;
 import androidx.core.app.RemoteInput;
 import com.callx.app.utils.Constants;
 import com.callx.app.utils.FirebaseUtils;
@@ -17,13 +18,14 @@ public class NotificationActionReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
         if (action == null) return;
-        String chatId      = intent.getStringExtra(Constants.EXTRA_CHAT_ID);
-        String partnerUid  = intent.getStringExtra(Constants.EXTRA_PARTNER_UID);
-        String partnerName = intent.getStringExtra(Constants.EXTRA_PARTNER_NAME);
-        int notifId        = intent.getIntExtra(Constants.EXTRA_NOTIF_ID, 0);
+        String chatId       = intent.getStringExtra(Constants.EXTRA_CHAT_ID);
+        String partnerUid   = intent.getStringExtra(Constants.EXTRA_PARTNER_UID);
+        String partnerName  = intent.getStringExtra(Constants.EXTRA_PARTNER_NAME);
+        String partnerPhoto = intent.getStringExtra(Constants.EXTRA_PARTNER_PHOTO);
+        int notifId         = intent.getIntExtra(Constants.EXTRA_NOTIF_ID, 0);
         if (FirebaseAuth.getInstance().getCurrentUser() == null) return;
-        String myUid  = FirebaseAuth.getInstance().getCurrentUser().getUid();
-        String myName = FirebaseUtils.getCurrentName();
+        final String myUid  = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        final String myName = FirebaseUtils.getCurrentName();
         NotificationManager nm = (NotificationManager)
             context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (Constants.ACTION_MARK_READ.equals(action)) {
@@ -34,20 +36,67 @@ public class NotificationActionReceiver extends BroadcastReceiver {
             if (nm != null) nm.cancel(notifId);
             return;
         }
+        // (Feature 1) Mute — sound off. Future notifications silent show honge.
         if (Constants.ACTION_MUTE.equals(action)) {
             if (partnerUid != null) {
                 FirebaseUtils.db().getReference("muted")
                     .child(myUid).child(partnerUid).setValue(true);
             }
             if (nm != null) nm.cancel(notifId);
+            Toast.makeText(context, "Muted", Toast.LENGTH_SHORT).show();
             return;
         }
+        // (Feature 2) Block — future me real notification ki jagah
+        // "Unblock {sender}" prompt aayega.
         if (Constants.ACTION_BLOCK.equals(action)) {
             if (partnerUid != null) {
                 FirebaseUtils.db().getReference("blocked")
                     .child(myUid).child(partnerUid).setValue(true);
             }
             if (nm != null) nm.cancel(notifId);
+            Toast.makeText(context, "Blocked. Aagle message pe Unblock prompt aayega.",
+                Toast.LENGTH_SHORT).show();
+            return;
+        }
+        // (Feature 3) Unblock — block hata do, agla message normally aayega
+        if (Constants.ACTION_UNBLOCK.equals(action)) {
+            if (partnerUid != null) {
+                FirebaseUtils.db().getReference("blocked")
+                    .child(myUid).child(partnerUid).removeValue();
+            }
+            if (nm != null) nm.cancel(notifId);
+            Toast.makeText(context, "Unblocked", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        // (Feature 4 / 12) Permanent block — sender ka koi notification nahi.
+        // Sender ko ek baar return notification jaata hai.
+        if (Constants.ACTION_PERMA_BLOCK.equals(action)) {
+            if (partnerUid != null) {
+                FirebaseUtils.db().getReference("permaBlocked")
+                    .child(myUid).child(partnerUid).setValue(true);
+                FirebaseUtils.db().getReference("blocked")
+                    .child(myUid).child(partnerUid).setValue(true);
+                // Receiver details ke saath sender ko ek baar notify karo
+                PushNotify.notifyPermaBlock(partnerUid, myUid, myName);
+            }
+            if (nm != null) nm.cancel(notifId);
+            Toast.makeText(context, "Permanently blocked", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        // (Feature 16) Special-request notification ka "Please unblock me" button
+        if (Constants.ACTION_SPECIAL_UNBLOCK.equals(action)) {
+            if (partnerUid != null) {
+                // Receiver = me. Sender (partnerUid) ko unblock karo.
+                FirebaseUtils.db().getReference("blocked")
+                    .child(myUid).child(partnerUid).removeValue();
+                FirebaseUtils.db().getReference("permaBlocked")
+                    .child(myUid).child(partnerUid).removeValue();
+                // Special request entry bhi remove
+                FirebaseUtils.db().getReference("specialRequests")
+                    .child(myUid).child(partnerUid).removeValue();
+            }
+            if (nm != null) nm.cancel(notifId);
+            Toast.makeText(context, "Unblocked", Toast.LENGTH_SHORT).show();
             return;
         }
         if (Constants.ACTION_REPLY.equals(action)) {

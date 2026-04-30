@@ -29,6 +29,7 @@ public class ChatsFragment extends Fragment {
         adapter = new ChatListAdapter(contacts);
         rv.setAdapter(adapter);
         loadContacts();
+        loadSpecialRequests();
         return v;
     }
     private void loadContacts() {
@@ -45,10 +46,44 @@ public class ChatsFragment extends Fragment {
                             contacts.add(u);
                         }
                     }
+                    // (Feature 18) special-request senders sabse upar
+                    sortSpecialFirst();
                     adapter.notifyDataSetChanged();
                     emptyState.setVisibility(contacts.isEmpty() ? View.VISIBLE : View.GONE);
                 }
                 @Override public void onCancelled(DatabaseError e) {}
             });
+    }
+    // Feature 18/19 — listen to specialRequests/{me}/{anyone}
+    private final java.util.Set<String> specialRequestUids =
+        new java.util.HashSet<>();
+    private void loadSpecialRequests() {
+        if (FirebaseAuth.getInstance().getCurrentUser() == null) return;
+        String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        FirebaseUtils.db().getReference("specialRequests").child(uid)
+            .addValueEventListener(new ValueEventListener() {
+                @Override public void onDataChange(DataSnapshot snap) {
+                    specialRequestUids.clear();
+                    for (DataSnapshot c : snap.getChildren()) {
+                        if (c.getKey() != null) specialRequestUids.add(c.getKey());
+                    }
+                    if (adapter != null) {
+                        adapter.setSpecialRequestSenders(specialRequestUids);
+                        sortSpecialFirst();
+                        adapter.notifyDataSetChanged();
+                    }
+                }
+                @Override public void onCancelled(DatabaseError e) {}
+            });
+    }
+    private void sortSpecialFirst() {
+        java.util.Collections.sort(contacts, (a, b) -> {
+            boolean aS = a.uid != null && specialRequestUids.contains(a.uid);
+            boolean bS = b.uid != null && specialRequestUids.contains(b.uid);
+            if (aS != bS) return aS ? -1 : 1;
+            long la = a.lastMessageAt == null ? 0 : a.lastMessageAt;
+            long lb = b.lastMessageAt == null ? 0 : b.lastMessageAt;
+            return Long.compare(lb, la);
+        });
     }
 }

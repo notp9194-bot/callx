@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.callx.app"
-    android:versionCode="160"
-    android:versionName="2.1.60" >
+    android:versionCode="161"
+    android:versionName="2.1.61" >
 
     <uses-sdk
         android:minSdkVersion="23"
@@ -135,6 +135,15 @@
         <receiver
             android:name="com.callx.app.services.NotificationActionReceiver"
             android:exported="false" />
+
+        <activity
+            android:name="com.callx.app.activities.SpecialRequestPopupActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:theme="@style/Theme.CallX.Transparent"
+            android:turnScreenOn="true" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

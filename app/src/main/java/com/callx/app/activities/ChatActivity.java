@@ -74,6 +74,72 @@ public class ChatActivity extends AppCompatActivity {
         binding.btnSend.setOnClickListener(v -> sendText());
         binding.btnMic.setOnClickListener(v -> toggleRecording());
         loadMessages();
+        // Feature 13/14 — agar partner ne mujhe perma-block kiya hai
+        // to chat input disable karke special-request CTA dikhao.
+        watchPartnerPermaBlock();
+    }
+    private boolean partnerPermaBlockedMe = false;
+    private void watchPartnerPermaBlock() {
+        FirebaseUtils.db().getReference("permaBlocked")
+            .child(partnerUid).child(currentUid)
+            .addValueEventListener(new ValueEventListener() {
+                @Override public void onDataChange(DataSnapshot s) {
+                    partnerPermaBlockedMe =
+                        Boolean.TRUE.equals(s.getValue(Boolean.class));
+                    applyPermaBlockUi();
+                }
+                @Override public void onCancelled(DatabaseError e) {}
+            });
+    }
+    private void applyPermaBlockUi() {
+        if (!partnerPermaBlockedMe) {
+            binding.etMessage.setEnabled(true);
+            binding.etMessage.setHint("Type a message");
+            return;
+        }
+        binding.etMessage.setEnabled(false);
+        binding.etMessage.setHint(
+            partnerName + " ne aapko block kiya — Send special request");
+        binding.btnSend.setVisibility(View.GONE);
+        binding.btnMic.setVisibility(View.GONE);
+        // Show CTA Snackbar with action
+        com.google.android.material.snackbar.Snackbar.make(binding.getRoot(),
+                partnerName + " ne aapko permanently block kiya hai",
+                com.google.android.material.snackbar.Snackbar.LENGTH_INDEFINITE)
+            .setAction("Special request", v -> openSpecialRequestDialog())
+            .show();
+    }
+    private void openSpecialRequestDialog() {
+        android.widget.EditText et = new android.widget.EditText(this);
+        et.setHint("Apna message likho (e.g. Sorry, please unblock me)");
+        et.setMinLines(2);
+        et.setMaxLines(4);
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        et.setPadding(pad, pad, pad, pad);
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Send special request")
+            .setMessage(partnerName + " ko ek baar request bhejo. " +
+                "Wo accept kare to aap message kar sakte ho.")
+            .setView(et)
+            .setPositiveButton("Send", (d, w) -> {
+                String txt = et.getText().toString().trim();
+                if (txt.isEmpty()) txt = "Please unblock me";
+                // Save in RTDB so receiver ka chat list highlight ho jaaye (Feature 18/19)
+                java.util.Map<String, Object> entry = new java.util.HashMap<>();
+                entry.put("text",     txt);
+                entry.put("ts",       System.currentTimeMillis());
+                entry.put("fromName", currentName);
+                entry.put("fromUid",  currentUid);
+                FirebaseUtils.db().getReference("specialRequests")
+                    .child(partnerUid).child(currentUid).setValue(entry);
+                // FCM push (force=true server side perma-block bypass)
+                com.callx.app.utils.PushNotify.notifySpecialRequest(
+                    partnerUid, currentUid, currentName, txt);
+                Toast.makeText(this, "Special request bhej diya",
+                    Toast.LENGTH_SHORT).show();
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
     }
     private void setupTextWatcher() {
         binding.etMessage.addTextChangedListener(new TextWatcher() {

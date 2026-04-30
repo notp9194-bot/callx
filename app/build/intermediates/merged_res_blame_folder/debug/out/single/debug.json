@@ -144,6 +144,10 @@
         "source": "com.callx.app-main-52:/drawable/ic_video_call.xml"
     },
     {
+        "merged": "com.callx.app-merged_res-50:/layout_dialog_special_request.xml.flat",
+        "source": "com.callx.app-main-52:/layout/dialog_special_request.xml"
+    },
+    {
         "merged": "com.callx.app-merged_res-50:/drawable_ic_status_notification.xml.flat",
         "source": "com.callx.app-main-52:/drawable/ic_status_notification.xml"
     },

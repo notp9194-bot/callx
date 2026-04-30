@@ -74,10 +74,24 @@ app.post("/notify", async (req, res) => {
     return res.status(503).json({ error: "Firebase not configured" });
   const {
     toUid, fromUid, fromName, type, text,
-    chatId, messageId, mediaUrl
+    chatId, messageId, mediaUrl, force
   } = req.body || {};
   if (!toUid) return res.status(400).json({ error: "toUid required" });
   try {
+    // (Feature 4) Server-side perma-block guard — saves bandwidth and
+    // ensures NOTHING ever reaches a permanently-blocked receiver.
+    // permaBlocked/{receiverUid}/{senderUid} === true means receiver
+    // (toUid) blocked sender (fromUid). force=true bypass karta hai
+    // (perma-block return + special-request flows ke liye).
+    if (!force && fromUid) {
+      try {
+        const pbSnap = await admin.database()
+          .ref("permaBlocked/" + toUid + "/" + fromUid).once("value");
+        if (pbSnap.val() === true) {
+          return res.json({ ok: true, dropped: "permaBlocked" });
+        }
+      } catch (e) { /* best-effort */ }
+    }
     const snap = await admin.database().ref("users/" + toUid).once("value");
     const user = snap.val() || {};
     if (!user.fcmToken)

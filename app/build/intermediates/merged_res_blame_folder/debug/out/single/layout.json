@@ -80,6 +80,10 @@
         "source": "com.callx.app-main-52:/layout/item_contact.xml"
     },
     {
+        "merged": "com.callx.app-mergeDebugResources-49:/layout/dialog_special_request.xml",
+        "source": "com.callx.app-main-52:/layout/dialog_special_request.xml"
+    },
+    {
         "merged": "com.callx.app-mergeDebugResources-49:/layout/dialog_request_popup.xml",
         "source": "com.callx.app-main-52:/layout/dialog_request_popup.xml"
     },

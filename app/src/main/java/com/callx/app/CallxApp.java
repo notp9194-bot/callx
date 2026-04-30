@@ -1,15 +1,25 @@
 package com.callx.app;
+import android.app.Activity;
 import android.app.Application;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.media.AudioAttributes;
 import android.media.RingtoneManager;
 import android.os.Build;
+import android.os.Bundle;
 import android.util.Log;
 import com.callx.app.utils.Constants;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 public class CallxApp extends Application {
     private static final String TAG = "CallxApp";
+    private static int sActivityRefs = 0;
+    private static String sMyPhotoUrl = "";
+    public static boolean isAppInForeground() { return sActivityRefs > 0; }
+    public static String getMyPhotoUrlCached()  { return sMyPhotoUrl; }
     @Override
     public void onCreate() {
         super.onCreate();
@@ -20,6 +30,39 @@ public class CallxApp extends Application {
             Log.w(TAG, "Persistence already enabled: " + e.getMessage());
         }
         createChannels();
+        registerForegroundTracking();
+        cacheMyPhotoUrl();
+    }
+    // Track whether ANY activity is in resumed/started state
+    private void registerForegroundTracking() {
+        registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
+            @Override public void onActivityCreated(Activity a, Bundle s) {}
+            @Override public void onActivityStarted(Activity a) { sActivityRefs++; }
+            @Override public void onActivityResumed(Activity a) {}
+            @Override public void onActivityPaused(Activity a) {}
+            @Override public void onActivityStopped(Activity a) {
+                if (sActivityRefs > 0) sActivityRefs--;
+            }
+            @Override public void onActivitySaveInstanceState(Activity a, Bundle b) {}
+            @Override public void onActivityDestroyed(Activity a) {}
+        });
+    }
+    // Cache my own photoUrl so background notifications (for direct reply
+    // — Feature 10) ko avatar ke saath dikhaya ja sake.
+    private void cacheMyPhotoUrl() {
+        try {
+            if (FirebaseAuth.getInstance().getCurrentUser() == null) return;
+            String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+            FirebaseDatabase.getInstance(Constants.DB_URL)
+                .getReference("users").child(uid).child("photoUrl")
+                .addValueEventListener(new ValueEventListener() {
+                    @Override public void onDataChange(DataSnapshot s) {
+                        Object v = s.getValue();
+                        sMyPhotoUrl = v == null ? "" : String.valueOf(v);
+                    }
+                    @Override public void onCancelled(DatabaseError e) {}
+                });
+        } catch (Exception ignored) {}
     }
     private void createChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
@@ -63,5 +106,23 @@ public class CallxApp extends Application {
         reqs.enableVibration(true);
         reqs.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
         nm.createNotificationChannel(reqs);
+
+        // Block / Unblock prompt channel — high so user dekh sake
+        NotificationChannel block = new NotificationChannel(
+            Constants.CHANNEL_BLOCK, "Blocked Senders",
+            NotificationManager.IMPORTANCE_HIGH);
+        block.enableVibration(false);
+        block.setSound(null, null);
+        block.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+        nm.createNotificationChannel(block);
+
+        // Muted channel — silent, no sound, low importance
+        NotificationChannel muted = new NotificationChannel(
+            Constants.CHANNEL_MUTED, "Muted Conversations",
+            NotificationManager.IMPORTANCE_LOW);
+        muted.enableVibration(false);
+        muted.setSound(null, null);
+        muted.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
+        nm.createNotificationChannel(muted);
     }
 }
