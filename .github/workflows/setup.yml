@@ -2046,6 +2046,23 @@ jobs:
                           android:layout_height="wrap_content"
                           android:textColor="@color/text_muted"
                           android:textSize="11sp"/>
+                      <TextView
+                          android:id="@+id/tv_unread_badge"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:minWidth="20dp"
+                          android:minHeight="20dp"
+                          android:gravity="center"
+                          android:paddingStart="6dp"
+                          android:paddingEnd="6dp"
+                          android:paddingTop="2dp"
+                          android:paddingBottom="2dp"
+                          android:textColor="@color/white"
+                          android:textSize="11sp"
+                          android:textStyle="bold"
+                          android:background="@drawable/bg_unread_badge"
+                          android:layout_marginTop="6dp"
+                          android:visibility="gone"/>
                       <ImageButton
                           android:id="@+id/btn_call"
                           android:layout_width="36dp"
@@ -2057,6 +2074,16 @@ jobs:
                   </LinearLayout>
               </LinearLayout>
           </androidx.cardview.widget.CardView>
+          ENDOFFILE
+
+          # bg_unread_badge.xml — green WhatsApp style unread count pill
+          cat > app/src/main/res/drawable/bg_unread_badge.xml << 'ENDOFFILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android"
+              android:shape="rectangle">
+              <solid android:color="@color/action_call_accept"/>
+              <corners android:radius="999dp"/>
+          </shape>
           ENDOFFILE
 
           # item_request.xml — contact request card with Accept/Reject
@@ -2821,6 +2848,10 @@ jobs:
               public String photoUrl;
               public String fcmToken;
               public Long lastSeen;
+              // WhatsApp style chat list metadata
+              public String lastMessage;
+              public Long lastMessageAt;
+              public Long unread;
               public User() {}
           }
           ENDOFFILE
@@ -3709,6 +3740,9 @@ jobs:
                   currentUid  = FirebaseAuth.getInstance().getCurrentUser().getUid();
                   currentName = FirebaseUtils.getCurrentName();
                   chatId = FirebaseUtils.getChatId(currentUid, partnerUid);
+                  // WhatsApp style: chat khulte hi mera unread counter reset
+                  FirebaseUtils.getContactsRef(currentUid).child(partnerUid)
+                      .child("unread").setValue(0);
                   setSupportActionBar(binding.toolbar);
                   if (getSupportActionBar() != null) {
                       getSupportActionBar().setDisplayHomeAsUpEnabled(true);
@@ -3856,13 +3890,30 @@ jobs:
                   DatabaseReference ref = FirebaseUtils.getMessagesRef(chatId).push();
                   m.id = ref.getKey();
                   ref.setValue(m);
-                  // Update lastMessage on contacts
-                  Map<String, Object> meta = new HashMap<>();
-                  meta.put("lastMessage", preview);
-                  meta.put("lastMessageAt", System.currentTimeMillis());
-                  FirebaseUtils.getContactsRef(currentUid).child(partnerUid).updateChildren(meta);
-                  FirebaseUtils.getContactsRef(partnerUid).child(currentUid).updateChildren(meta);
+                  // Update lastMessage on contacts (sender side: zero unread, recipient side: bump)
+                  Map<String, Object> meSide = new HashMap<>();
+                  meSide.put("lastMessage", preview);
+                  meSide.put("lastMessageAt", System.currentTimeMillis());
+                  meSide.put("unread", 0);
+                  FirebaseUtils.getContactsRef(currentUid).child(partnerUid)
+                      .updateChildren(meSide);
+
+                  Map<String, Object> partnerSide = new HashMap<>();
+                  partnerSide.put("lastMessage", preview);
+                  partnerSide.put("lastMessageAt", System.currentTimeMillis());
+                  partnerSide.put("unread", ServerValue.increment(1));
+                  FirebaseUtils.getContactsRef(partnerUid).child(currentUid)
+                      .updateChildren(partnerSide);
+
                   PushNotify.notifyUser(partnerUid, currentUid, currentName, "message", preview);
+              }
+              @Override protected void onResume() {
+                  super.onResume();
+                  // Chat screen visible hai to unread hamesha 0 rahe
+                  if (currentUid != null && partnerUid != null) {
+                      FirebaseUtils.getContactsRef(currentUid).child(partnerUid)
+                          .child("unread").setValue(0);
+                  }
               }
               private void loadMessages() {
                   FirebaseUtils.getMessagesRef(chatId).orderByChild("timestamp")
@@ -5148,9 +5199,33 @@ jobs:
                   } else {
                       h.ivAvatar.setImageResource(R.drawable.ic_person);
                   }
-                  if (u.lastSeen != null) {
-                      h.tvTime.setText(fmt.format(new Date(u.lastSeen)));
-                  } else h.tvTime.setText("");
+                  // Last message preview (falls back to last-seen time text)
+                  if (u.lastMessage != null && !u.lastMessage.isEmpty()) {
+                      h.tvLastMessage.setText(u.lastMessage);
+                  } else {
+                      h.tvLastMessage.setText("Tap karke chat karo");
+                  }
+                  // Time: prefer lastMessageAt, then lastSeen
+                  Long when = u.lastMessageAt != null ? u.lastMessageAt : u.lastSeen;
+                  if (when != null && when > 0) {
+                      h.tvTime.setText(fmt.format(new Date(when)));
+                  } else {
+                      h.tvTime.setText("");
+                  }
+                  // WhatsApp style unread badge
+                  long unread = u.unread == null ? 0 : u.unread;
+                  if (unread > 0) {
+                      h.tvUnread.setText(unread > 99 ? "99+" : String.valueOf(unread));
+                      h.tvUnread.setVisibility(View.VISIBLE);
+                      h.tvName.setTextColor(
+                          ctx.getResources().getColor(R.color.text_primary));
+                      h.tvLastMessage.setTextColor(
+                          ctx.getResources().getColor(R.color.text_primary));
+                  } else {
+                      h.tvUnread.setVisibility(View.GONE);
+                      h.tvLastMessage.setTextColor(
+                          ctx.getResources().getColor(R.color.text_secondary));
+                  }
                   h.itemView.setOnClickListener(v -> {
                       Intent i = new Intent(ctx, ChatActivity.class);
                       i.putExtra("partnerUid", u.uid);
@@ -5167,7 +5242,7 @@ jobs:
               }
               @Override public int getItemCount() { return contacts.size(); }
               static class VH extends RecyclerView.ViewHolder {
-                  TextView tvName, tvLastMessage, tvTime;
+                  TextView tvName, tvLastMessage, tvTime, tvUnread;
                   CircleImageView ivAvatar;
                   ImageButton btnCall;
                   VH(View v) {
@@ -5175,6 +5250,7 @@ jobs:
                       tvName        = v.findViewById(R.id.tv_name);
                       tvLastMessage = v.findViewById(R.id.tv_last_message);
                       tvTime        = v.findViewById(R.id.tv_time);
+                      tvUnread      = v.findViewById(R.id.tv_unread_badge);
                       ivAvatar      = v.findViewById(R.id.iv_avatar);
                       btnCall       = v.findViewById(R.id.btn_call);
                   }
