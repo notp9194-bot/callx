@@ -89,9 +89,6 @@
             android:exported="false"
             android:foregroundServiceType="phoneCall"/>
 
-        <receiver android:name=".services.NotificationActionReceiver"
-            android:exported="false"/>
-
         <activity android:name=".activities.SpecialRequestPopupActivity"
             android:exported="false"
             android:theme="@style/Theme.CallX.Transparent"
@@ -113,5 +110,23 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="callx_calls"/>
-    </application>
-</manifest>
+
+      <!-- ── IncomingRingService: rings when app process is killed ── -->
+      <service
+          android:name=".services.IncomingRingService"
+          android:exported="false"
+          android:foregroundServiceType="phoneCall"
+          android:stopWithTask="false"/>
+
+      <!-- ── Call action broadcast receiver (accept/decline/end from notification) ── -->
+      <receiver
+          android:name=".services.NotificationActionReceiver"
+          android:exported="false">
+          <intent-filter>
+              <action android:name="com.callx.app.ACCEPT_CALL"/>
+              <action android:name="com.callx.app.DECLINE_CALL"/>
+              <action android:name="com.callx.app.END_CALL"/>
+          </intent-filter>
+      </receiver>
+      </application>
+  </manifest>

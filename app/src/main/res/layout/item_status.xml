@@ -1,87 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.cardview.widget.CardView
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/card_status"
-    android:layout_width="140dp"
-    android:layout_height="220dp"
-    android:layout_marginStart="6dp"
-    android:layout_marginEnd="6dp"
-    android:layout_marginTop="4dp"
-    android:layout_marginBottom="4dp"
-    app:cardCornerRadius="18dp"
-    app:cardElevation="6dp"
-    app:cardBackgroundColor="#1F2937"
-    android:foreground="?attr/selectableItemBackground"
-    android:clickable="true"
-    android:focusable="true">
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="14dp"
+    android:gravity="center_vertical"
+    android:background="?attr/selectableItemBackground">
     <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent">
-
-        <!-- Background preview (status media or placeholder) -->
-        <ImageView
-            android:id="@+id/iv_bg"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="centerCrop"
-            android:src="@drawable/status_card_placeholder"
-            android:contentDescription="Status preview"/>
-
-        <!-- Bottom dark gradient overlay for text legibility -->
+        android:layout_width="60dp"
+        android:layout_height="60dp">
         <View
+            android:id="@+id/ring"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="@drawable/status_gradient_overlay"/>
-
-        <!-- Top-left circular profile image with colored ring -->
-        <FrameLayout
-            android:layout_width="46dp"
-            android:layout_height="46dp"
-            android:layout_gravity="top|start"
-            android:layout_marginStart="10dp"
-            android:layout_marginTop="10dp">
-            <View
-                android:id="@+id/ring"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@drawable/circle_status_unseen"/>
-            <de.hdodenhof.circleimageview.CircleImageView
-                android:id="@+id/iv_avatar"
-                android:layout_width="38dp"
-                android:layout_height="38dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_person"
-                app:civ_border_width="2dp"
-                app:civ_border_color="#1F2937"
-                android:background="@color/surface_input"/>
-        </FrameLayout>
-
-        <!-- Bottom: username + time -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|start"
-            android:orientation="vertical"
-            android:padding="12dp">
-            <TextView
-                android:id="@+id/tv_name"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="#FFFFFF"
-                android:textStyle="bold"
-                android:textSize="14sp"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:shadowColor="#80000000"
-                android:shadowDx="0" android:shadowDy="1" android:shadowRadius="2"/>
-            <TextView
-                android:id="@+id/tv_time"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="#CCFFFFFF"
-                android:textSize="11sp"
-                android:layout_marginTop="2dp"/>
-        </LinearLayout>
+            android:background="@drawable/circle_status_unseen"/>
+        <de.hdodenhof.circleimageview.CircleImageView
+            android:id="@+id/iv_avatar"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_person"
+            android:background="@color/surface_input"/>
     </FrameLayout>
-</androidx.cardview.widget.CardView>
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginStart="14dp">
+        <TextView
+            android:id="@+id/tv_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textStyle="bold"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="16sp"/>
+        <TextView
+            android:id="@+id/tv_time"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"/>
+    </LinearLayout>
+</LinearLayout>

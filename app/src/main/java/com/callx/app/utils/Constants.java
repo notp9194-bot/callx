@@ -46,5 +46,19 @@ public class Constants {
     public static final String KEY_GROUP_TEXT_REPLY = "key_group_text_reply";
     // Online window — last seen within this many ms => Online
     public static final long ONLINE_WINDOW_MS = 60_000L;
-    private Constants() {}
+      // ── Call notification IDs ──
+      public static final int  CALL_RING_NOTIF_ID    = 1001;
+      public static final int  CALL_ONGOING_NOTIF_ID = 9001;
+      // ── Incoming ring channel ──
+      public static final String CHANNEL_CALLS_INCOMING = "callx_calls_incoming";
+      // ── Call actions (broadcast) ──
+      public static final String ACTION_ACCEPT_CALL  = "com.callx.app.ACCEPT_CALL";
+      public static final String ACTION_DECLINE_CALL = "com.callx.app.DECLINE_CALL";
+      public static final String ACTION_END_CALL     = "com.callx.app.END_CALL";
+      // ── Call extras ──
+      public static final String EXTRA_CALL_ID       = "callId";
+      public static final String EXTRA_IS_VIDEO      = "isVideo";
+      // ── Call timeout ──
+      public static final long   CALL_TIMEOUT_MS     = 60_000L;
+      private Constants() {}
 }

@@ -83,7 +83,17 @@ public class CallxApp extends Application {
         calls.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
         nm.createNotificationChannel(calls);
 
-        NotificationChannel msgs = new NotificationChannel(
+          // ── Incoming ring channel (shown while phone is ringing) ──
+          NotificationChannel incomingChan = new NotificationChannel(
+              Constants.CHANNEL_CALLS_INCOMING, "Incoming Ring",
+              NotificationManager.IMPORTANCE_HIGH);
+          incomingChan.setSound(
+              RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), attrs);
+          incomingChan.enableVibration(true);
+          incomingChan.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+          nm.createNotificationChannel(incomingChan);
+
+          NotificationChannel msgs = new NotificationChannel(
             Constants.CHANNEL_MESSAGES, "Messages",
             NotificationManager.IMPORTANCE_HIGH);
         msgs.enableVibration(true);

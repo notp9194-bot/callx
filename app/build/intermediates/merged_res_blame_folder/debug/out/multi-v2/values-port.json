@@ -4,7 +4,7 @@
             "outputFile": "com.callx.app-mergeDebugResources-48:/values-port/values-port.xml",
             "map": [
                 {
-                    "source": "/home/runner/.gradle/caches/transforms-3/b6a85317a06f86d77badfb1158577d68/transformed/appcompat-1.6.1/res/values-port/values-port.xml",
+                    "source": "/data/data/com.termux/files/home/.gradle/caches/transforms-3/b6a85317a06f86d77badfb1158577d68/transformed/appcompat-1.6.1/res/values-port/values-port.xml",
                     "from": {
                         "startLines": "2",
                         "startColumns": "4",

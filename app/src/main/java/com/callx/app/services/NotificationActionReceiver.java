@@ -68,6 +68,49 @@ public class NotificationActionReceiver extends BroadcastReceiver {
             Toast.makeText(context, "Unblocked", Toast.LENGTH_SHORT).show();
             return;
         }
+          // ── Call actions ────────────────────────────────────────────────
+          String callId = intent.getStringExtra(Constants.EXTRA_CALL_ID);
+          boolean isVid = intent.getBooleanExtra(Constants.EXTRA_IS_VIDEO, false);
+          // Decline call — reject without opening app
+          if (Constants.ACTION_DECLINE_CALL.equals(action)) {
+              if (nm != null) nm.cancel(Constants.CALL_RING_NOTIF_ID);
+              context.stopService(new android.content.Intent(context,
+                  com.callx.app.services.IncomingRingService.class));
+              if (callId != null && !callId.isEmpty()) {
+                  com.callx.app.utils.FirebaseUtils.db()
+                      .getReference("activeCalls").child(callId)
+                      .child("status").setValue("rejected");
+              }
+              return;
+          }
+          // Accept call — dismiss ring notification, open IncomingCallActivity
+          if (Constants.ACTION_ACCEPT_CALL.equals(action)) {
+              if (nm != null) nm.cancel(Constants.CALL_RING_NOTIF_ID);
+              context.stopService(new android.content.Intent(context,
+                  com.callx.app.services.IncomingRingService.class));
+              android.content.Intent open = new android.content.Intent(context,
+                  com.callx.app.activities.IncomingCallActivity.class);
+              open.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                  | android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP);
+              open.putExtra(Constants.EXTRA_CALL_ID,      callId);
+              open.putExtra(Constants.EXTRA_PARTNER_UID,  partnerUid);
+              open.putExtra(Constants.EXTRA_PARTNER_NAME, partnerName);
+              open.putExtra(Constants.EXTRA_IS_VIDEO,     isVid);
+              context.startActivity(open);
+              return;
+          }
+          // End call — hang up from notification shade during active call
+          if (Constants.ACTION_END_CALL.equals(action)) {
+              if (nm != null) nm.cancel(Constants.CALL_ONGOING_NOTIF_ID);
+              context.stopService(new android.content.Intent(context,
+                  com.callx.app.services.CallForegroundService.class));
+              if (callId != null && !callId.isEmpty()) {
+                  com.callx.app.utils.FirebaseUtils.db()
+                      .getReference("activeCalls").child(callId)
+                      .child("status").setValue("ended");
+              }
+              return;
+          }
         // (Feature 4 / 12) Permanent block — sender ka koi notification nahi.
         // Sender ko ek baar return notification jaata hai.
         if (Constants.ACTION_PERMA_BLOCK.equals(action)) {

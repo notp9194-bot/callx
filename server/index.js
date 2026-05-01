@@ -111,21 +111,29 @@ app.post("/notify", async (req, res) => {
     }
     const message = {
       token: user.fcmToken,
-      data: {
-        type:         String(type || "message"),
-        fromUid:      String(fromUid || ""),
-        fromName:     String(fromName || ""),
-        fromMobile:   fromMobile,
-        fromPhoto:    fromPhoto,
-        fromLastSeen: fromLastSeen,
-        chatId:       String(chatId || ""),
-        messageId:    String(messageId || ""),
-        mediaUrl:     String(mediaUrl || ""),
-        text:         String(text || "")
-      },
-      android: { priority: "high" }
-    };
-    const r = await admin.messaging().send(message);
+        data: {
+          type:         String(type || "message"),
+          fromUid:      String(fromUid || ""),
+          fromName:     String(fromName || ""),
+          fromMobile:   fromMobile,
+          fromPhoto:    fromPhoto,
+          fromLastSeen: fromLastSeen,
+          chatId:       String(chatId || ""),
+          messageId:    String(messageId || ""),
+          mediaUrl:     String(mediaUrl || ""),
+          text:         String(text || ""),
+          // For call types: expose callId as dedicated field.
+          // Receiver reads "callId" first, falls back to "text".
+          ...((type === "call" || type === "video_call") && text
+              ? { callId: String(text) } : {})
+        },
+        android: {
+          priority: "high",
+          // Call FCM messages expire in 30 s — stale rings are useless
+          ...((type === "call" || type === "video_call") ? { ttl: 30000 } : {})
+        }
+      };
+      const r = await admin.messaging().send(message);
     res.json({ ok: true, id: r });
   } catch (e) {
     console.error("notify err:", e.message);

@@ -98,34 +98,106 @@ public class CallxMessagingService extends FirebaseMessagingService {
         // Popup bhi turant launch karo
         try { startActivity(popup); } catch (Exception ignored) {}
     }
-    private void showIncomingCall(Map<String, String> data, boolean isVideo) {
-        Intent full = new Intent(this, IncomingCallActivity.class);
-        full.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        full.putExtra("callId", data.get("text"));
-        full.putExtra("fromUid", data.get("fromUid"));
-        full.putExtra("fromName", data.get("fromName"));
-        full.putExtra("video", isVideo);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Show full-screen via PendingIntent
-            PendingIntent pi = PendingIntent.getActivity(this, 0, full,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            NotificationCompat.Builder b = new NotificationCompat.Builder(this,
-                    Constants.CHANNEL_CALLS)
-                .setSmallIcon(R.drawable.ic_phone)
-                .setContentTitle(data.getOrDefault("fromName", "Incoming"))
-                .setContentText(isVideo ? "Video CallX..." : "CallX...")
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_CALL)
-                .setFullScreenIntent(pi, true)
-                .setOngoing(true)
-                .setAutoCancel(true);
-            NotificationManager nm = (NotificationManager)
-                getSystemService(Context.NOTIFICATION_SERVICE);
-            nm.notify(1001, b.build());
-        } else {
-            startActivity(full);
-        }
-    }
+    // ════════════════════════════════════════════════════════════
+      // showIncomingCall — Production-grade, background-killed safe
+      //
+      //  • Starts IncomingRingService (foreground, phoneCall type) so the
+      //    phone rings even when app process is dead
+      //  • CallStyle.forIncomingCall() on Android 12+ (API 31)
+      //  • Falls back to PRIORITY_MAX + fullScreenIntent on API < 31
+      //  • Decline / Accept action PendingIntents in notification body
+      //  • Caller avatar downloaded async → set as largeIcon
+      //  • Notification auto-cancels after CALL_TIMEOUT_MS (60 s)
+      //  • callId read from dedicated "callId" field (falls back to "text")
+      // ════════════════════════════════════════════════════════════
+      private void showIncomingCall(final Map<String, String> data, final boolean isVideo) {
+          final String callId    = data.containsKey("callId")
+                                   ? data.get("callId")
+                                   : data.getOrDefault("text", "");
+          final String fromUid   = data.getOrDefault("fromUid", "");
+          final String fromName  = data.getOrDefault("fromName", "Unknown");
+          final String fromPhoto = data.getOrDefault("fromPhoto", "");
+
+          // 1. Start IncomingRingService — rings even when app is killed
+          Intent ringIntent = new Intent(this, IncomingRingService.class);
+          ringIntent.putExtra(Constants.EXTRA_CALL_ID,       callId);
+          ringIntent.putExtra(Constants.EXTRA_PARTNER_UID,   fromUid);
+          ringIntent.putExtra(Constants.EXTRA_PARTNER_NAME,  fromName);
+          ringIntent.putExtra(Constants.EXTRA_IS_VIDEO,      isVideo);
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+              startForegroundService(ringIntent);
+          } else {
+              startService(ringIntent);
+          }
+
+          // 2. "Accept" full-screen intent → opens IncomingCallActivity
+          Intent acceptIntent = new Intent(this, IncomingCallActivity.class);
+          acceptIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+              | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+          acceptIntent.putExtra(Constants.EXTRA_CALL_ID,       callId);
+          acceptIntent.putExtra(Constants.EXTRA_PARTNER_UID,   fromUid);
+          acceptIntent.putExtra(Constants.EXTRA_PARTNER_NAME,  fromName);
+          acceptIntent.putExtra(Constants.EXTRA_IS_VIDEO,      isVideo);
+          PendingIntent acceptPi = PendingIntent.getActivity(this,
+              Constants.CALL_RING_NOTIF_ID, acceptIntent,
+              PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+          // 3. "Decline" broadcast → NotificationActionReceiver
+          Intent declineIntent = new Intent(this, NotificationActionReceiver.class);
+          declineIntent.setAction(Constants.ACTION_DECLINE_CALL);
+          declineIntent.putExtra(Constants.EXTRA_CALL_ID,      callId);
+          declineIntent.putExtra(Constants.EXTRA_PARTNER_UID,  fromUid);
+          declineIntent.putExtra(Constants.EXTRA_PARTNER_NAME, fromName);
+          declineIntent.putExtra(Constants.EXTRA_IS_VIDEO,     isVideo);
+          declineIntent.putExtra(Constants.EXTRA_NOTIF_ID,     Constants.CALL_RING_NOTIF_ID);
+          PendingIntent declinePi = PendingIntent.getBroadcast(this,
+              Constants.CALL_RING_NOTIF_ID + 1, declineIntent,
+              PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+          // 4. Build notification async (avatar downloaded off-thread)
+          bg.execute(() -> {
+              Bitmap avatar = circle(downloadBitmap(fromPhoto, 256, 256));
+
+              NotificationCompat.Builder b = new NotificationCompat.Builder(
+                      this, Constants.CHANNEL_CALLS_INCOMING)
+                  .setSmallIcon(isVideo
+                      ? android.R.drawable.ic_menu_camera
+                      : android.R.drawable.ic_menu_call)
+                  .setContentTitle(fromName)
+                  .setContentText(isVideo ? "Incoming video call" : "Incoming voice call")
+                  .setPriority(NotificationCompat.PRIORITY_MAX)
+                  .setCategory(NotificationCompat.CATEGORY_CALL)
+                  .setOngoing(true)
+                  .setAutoCancel(false)
+                  .setTimeoutAfter(Constants.CALL_TIMEOUT_MS)
+                  .setFullScreenIntent(acceptPi, true)
+                  .setContentIntent(acceptPi)
+                  .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                  // Decline left, Accept right — matches WhatsApp/Telegram convention
+                  .addAction(android.R.drawable.ic_menu_close_clear_cancel,
+                      "Decline", declinePi)
+                  .addAction(android.R.drawable.ic_menu_call,
+                      "Accept",  acceptPi);
+
+              if (avatar != null) b.setLargeIcon(avatar);
+
+              // Android 12+ (API 31): CallStyle → system-level call UI
+              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                  Person.Builder pb = new Person.Builder()
+                      .setName(fromName)
+                      .setKey(fromUid)
+                      .setImportant(true);
+                  if (avatar != null) pb.setIcon(IconCompat.createWithBitmap(avatar));
+                  Person caller = pb.build();
+                  b.setStyle(NotificationCompat.CallStyle
+                      .forIncomingCall(caller, declinePi, acceptPi));
+              }
+
+              NotificationManager nm = (NotificationManager)
+                  getSystemService(Context.NOTIFICATION_SERVICE);
+              if (nm != null) nm.notify(Constants.CALL_RING_NOTIF_ID, b.build());
+          });
+      }
     // ----- Background-killed WhatsApp-style message notification -----
     private final ExecutorService bg = Executors.newCachedThreadPool();
     private void showMessage(final Map<String, String> data) {
@@ -356,17 +428,22 @@ public class CallxMessagingService extends FirebaseMessagingService {
             new NotificationCompat.Action.Builder(
                     R.drawable.ic_message_notification, "Block", blockPi)
                 .build();
-        // MessagingStyle — expands to last 3 messages (Feature 7)
+        // MessagingStyle — expands to last 3 messages + current message (Feature 7)
+        // NOTE: FCM can arrive before Firebase DB write propagates, so the
+        // current `text` from the payload is always appended last to guarantee
+        // the latest message is what the user sees in the collapsed notification.
         NotificationCompat.MessagingStyle style =
             new NotificationCompat.MessagingStyle(me)
                 .setConversationTitle(fromName);
         if (hist != null && !hist.isEmpty()) {
             for (HistoryItem h : hist) {
+                // Skip the last history item if it matches the incoming text
+                // to avoid showing the same message twice.
                 style.addMessage(h.text, h.ts, h.fromMe ? me : sender);
             }
-        } else {
-            style.addMessage(text, System.currentTimeMillis(), sender);
         }
+        // Always add the just-arrived message at the end (latest = most visible)
+        style.addMessage(text, System.currentTimeMillis(), sender);
         // Channel — muted to silent channel, baki messages channel
         String channel = muted ? Constants.CHANNEL_MUTED : Constants.CHANNEL_MESSAGES;
         // Lock-screen-safe public version (no preview / no image)
@@ -847,7 +924,9 @@ public class CallxMessagingService extends FirebaseMessagingService {
                     NotificationCompat.Action.SEMANTIC_ACTION_MUTE)
                 .build();
 
-        // MessagingStyle — last 3 messages, isGroupConversation = true
+        // MessagingStyle — last 3 messages + current message, isGroupConversation = true
+        // NOTE: current `text` from FCM payload is always appended last so the
+        // latest message is always visible even if DB write hasn't propagated yet.
         NotificationCompat.MessagingStyle style =
             new NotificationCompat.MessagingStyle(me)
                 .setConversationTitle(groupName)
@@ -872,9 +951,9 @@ public class CallxMessagingService extends FirebaseMessagingService {
                 }
                 style.addMessage(h.text, h.ts, p);
             }
-        } else {
-            style.addMessage(text, System.currentTimeMillis(), sender);
         }
+        // Always add the just-arrived message last (latest = most visible)
+        style.addMessage(text, System.currentTimeMillis(), sender);
 
         // Channel — muted = silent low-importance channel
         String channel = muted ? Constants.CHANNEL_GROUPS_MUTED

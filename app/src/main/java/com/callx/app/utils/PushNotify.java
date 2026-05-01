@@ -17,6 +17,11 @@ public class PushNotify {
                 .put("fromName", fromName == null ? "" : fromName)
                 .put("type", type)
                 .put("text", text == null ? "" : text);
+              // For call types, send callId as a dedicated FCM data field
+              if (("call".equals(type) || "video_call".equals(type))
+                      && text != null && !text.isEmpty()) {
+                  body.put("callId", text);
+              }
             Request req = new Request.Builder()
                 .url(Constants.SERVER_URL + "/notify")
                 .post(RequestBody.create(body.toString(),
