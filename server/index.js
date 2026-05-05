@@ -56,7 +56,6 @@ app.post("/cloudinary/sign", (req, res) => {
   const folder       = (req.body && req.body.folder) || "callx";
   const resourceType = (req.body && req.body.resource_type) || "auto";
   const timestamp    = Math.floor(Date.now() / 1000).toString();
-  // Cloudinary signature: alphabetical params (folder + timestamp) + secret
   const toSign = `folder=${folder}&timestamp=${timestamp}`;
   const signature = crypto.createHash("sha1")
     .update(toSign + CLOUD_SEC).digest("hex");
@@ -78,11 +77,6 @@ app.post("/notify", async (req, res) => {
   } = req.body || {};
   if (!toUid) return res.status(400).json({ error: "toUid required" });
   try {
-    // (Feature 4) Server-side perma-block guard — saves bandwidth and
-    // ensures NOTHING ever reaches a permanently-blocked receiver.
-    // permaBlocked/{receiverUid}/{senderUid} === true means receiver
-    // (toUid) blocked sender (fromUid). force=true bypass karta hai
-    // (perma-block return + special-request flows ke liye).
     if (!force && fromUid) {
       try {
         const pbSnap = await admin.database()
@@ -96,8 +90,6 @@ app.post("/notify", async (req, res) => {
     const user = snap.val() || {};
     if (!user.fcmToken)
       return res.status(404).json({ error: "no token" });
-    // Lookup sender profile so the notification can show
-    // mobile, photo, online/offline state etc.
     let fromMobile = "", fromPhoto = "", fromLastSeen = "0";
     if (fromUid) {
       try {
@@ -111,29 +103,26 @@ app.post("/notify", async (req, res) => {
     }
     const message = {
       token: user.fcmToken,
-        data: {
-          type:         String(type || "message"),
-          fromUid:      String(fromUid || ""),
-          fromName:     String(fromName || ""),
-          fromMobile:   fromMobile,
-          fromPhoto:    fromPhoto,
-          fromLastSeen: fromLastSeen,
-          chatId:       String(chatId || ""),
-          messageId:    String(messageId || ""),
-          mediaUrl:     String(mediaUrl || ""),
-          text:         String(text || ""),
-          // For call types: expose callId as dedicated field.
-          // Receiver reads "callId" first, falls back to "text".
-          ...((type === "call" || type === "video_call") && text
-              ? { callId: String(text) } : {})
-        },
-        android: {
-          priority: "high",
-          // Call FCM messages expire in 30 s — stale rings are useless
-          ...((type === "call" || type === "video_call") ? { ttl: 30000 } : {})
-        }
-      };
-      const r = await admin.messaging().send(message);
+      data: {
+        type:         String(type || "message"),
+        fromUid:      String(fromUid || ""),
+        fromName:     String(fromName || ""),
+        fromMobile:   fromMobile,
+        fromPhoto:    fromPhoto,
+        fromLastSeen: fromLastSeen,
+        chatId:       String(chatId || ""),
+        messageId:    String(messageId || ""),
+        mediaUrl:     String(mediaUrl || ""),
+        text:         String(text || ""),
+        ...((type === "call" || type === "video_call") && text
+            ? { callId: String(text) } : {})
+      },
+      android: {
+        priority: "high",
+        ...((type === "call" || type === "video_call") ? { ttl: 30000 } : {})
+      }
+    };
+    const r = await admin.messaging().send(message);
     res.json({ ok: true, id: r });
   } catch (e) {
     console.error("notify err:", e.message);
@@ -141,13 +130,76 @@ app.post("/notify", async (req, res) => {
   }
 });
 
-// ---- Notify group (production-grade fanout to all members except sender) ----
-// Per-receiver handling:
-//  * permaBlocked sender drop kar deta hai (group me bhi)
-//  * mutedBy/{uid} = true => "muted" flag set hota hai (client low-priority channel)
-//  * unread/{uid} server-side increment hota hai (group meta)
-//  * sender ka latest photo + lastSeen lookup hota hai (rich notification ke liye)
-//  * stale FCM tokens (UNREGISTERED / NOT_FOUND) DB se clean ho jaate hain
+// ---- Notify reel like / comment / comment-like (NEW) ----
+//
+// FCM payload keys (received by ReelFCMNotificationHandler on client):
+//   reel_notif_type  → "like" | "comment" | "comment_like"
+//   sender_uid       → who performed the action
+//   sender_name      → display name of actor
+//   sender_photo     → avatar URL (fetched from DB if missing)
+//   reel_id          → target reel ID
+//   reel_thumb       → thumbnail URL for reel preview in notification
+//   comment_text     → comment body (for comment / comment_like)
+//   comment_id       → comment Firebase key
+//
+app.post("/notify/reel", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  const {
+    toUid, fromUid, fromName, fromPhoto,
+    reelId, reelThumb, type, commentText, commentId
+  } = req.body || {};
+
+  if (!toUid)   return res.status(400).json({ error: "toUid required" });
+  if (!reelId)  return res.status(400).json({ error: "reelId required" });
+  // Don't notify yourself
+  if (toUid === fromUid) return res.json({ ok: true, dropped: "self" });
+
+  try {
+    // Fetch receiver's FCM token
+    const snap = await admin.database().ref("users/" + toUid).once("value");
+    const user = snap.val() || {};
+    if (!user.fcmToken)
+      return res.status(404).json({ error: "no token" });
+
+    // Fetch sender's photo if not provided by client
+    let senderPhoto = String(fromPhoto || "");
+    if (!senderPhoto && fromUid) {
+      try {
+        const fSnap = await admin.database()
+          .ref("users/" + fromUid).once("value");
+        senderPhoto = String((fSnap.val() || {}).photoUrl || "");
+      } catch (e) { /* best-effort */ }
+    }
+
+    const message = {
+      token: user.fcmToken,
+      data: {
+        reel_notif_type: String(type        || "like"),
+        sender_uid:      String(fromUid     || ""),
+        sender_name:     String(fromName    || ""),
+        sender_photo:    senderPhoto,
+        reel_id:         String(reelId      || ""),
+        reel_thumb:      String(reelThumb   || ""),
+        comment_text:    String(commentText || ""),
+        comment_id:      String(commentId   || ""),
+      },
+      android: {
+        priority: "high",
+        ttl: 86400000
+      }
+    };
+
+    const r = await admin.messaging().send(message);
+    res.json({ ok: true, id: r });
+  } catch (e) {
+    console.error("reel notify err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- Notify group (production-grade fanout) ----
 app.post("/notify/group", async (req, res) => {
   if (!firebaseReady)
     return res.status(503).json({ error: "Firebase not configured" });
@@ -168,8 +220,6 @@ app.post("/notify/group", async (req, res) => {
       .filter(uid => uid !== fromUid);
     const mutedBy = g.mutedBy || {};
 
-    // Sender ka latest profile (photo / lastSeen) — agar client ne nahi bheja
-    // to RTDB se nikal lo. Notification rich banane ke liye chahiye.
     let senderPhoto   = String(fromPhoto || "");
     let senderMobile  = "";
     let senderLastSeen = "0";
@@ -184,15 +234,12 @@ app.post("/notify/group", async (req, res) => {
       } catch (e) { /* best-effort */ }
     }
 
-    // Per-member fanout
-    const updates = {};       // group/{groupId}/unread/{uid} bumps
-    const staleTokens = [];   // (uid, token) jinhe DB se hatana hai
+    const updates = {};
+    const staleTokens = [];
     let sent = 0, dropped = 0;
 
     await Promise.all(memberUids.map(async (uid) => {
       try {
-        // Permanent block: agar receiver ne sender ko perma-block kiya hua hai
-        // to is member ko notify mat karo.
         if (fromUid) {
           const pbSnap = await admin.database()
             .ref("permaBlocked/" + uid + "/" + fromUid).once("value");
@@ -205,8 +252,6 @@ app.post("/notify/group", async (req, res) => {
         if (!tk) { dropped++; return; }
 
         const isMuted = mutedBy[uid] === true;
-
-        // Unread bump (server-side, atomic)
         updates["groups/" + groupId + "/unread/" + uid] =
           admin.database.ServerValue.increment(1);
 
@@ -235,7 +280,6 @@ app.post("/notify/group", async (req, res) => {
         });
         sent++;
       } catch (e) {
-        // Stale FCM token cleanup
         const code = e && (e.code || e.errorInfo && e.errorInfo.code);
         if (code === "messaging/registration-token-not-registered" ||
             code === "messaging/invalid-registration-token") {
@@ -248,17 +292,13 @@ app.post("/notify/group", async (req, res) => {
       }
     }));
 
-    // Best-effort writes — agar fail bhi ho to push response affect na ho
     try {
-      if (Object.keys(updates).length) {
+      if (Object.keys(updates).length)
         await admin.database().ref().update(updates);
-      }
     } catch (e) { /* ignore */ }
     try {
-      for (const uid of staleTokens) {
-        await admin.database()
-          .ref("users/" + uid + "/fcmToken").remove();
-      }
+      for (const uid of staleTokens)
+        await admin.database().ref("users/" + uid + "/fcmToken").remove();
     } catch (e) { /* ignore */ }
 
     res.json({ ok: true, sent, dropped, members: memberUids.length });
@@ -268,7 +308,7 @@ app.post("/notify/group", async (req, res) => {
   }
 });
 
-// ---- Reset unread counter for a group (called by client when chat opened) ----
+// ---- Reset unread counter for a group ----
 app.post("/group/markRead", async (req, res) => {
   if (!firebaseReady)
     return res.status(503).json({ error: "Firebase not configured" });
