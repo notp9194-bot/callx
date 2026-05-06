@@ -130,21 +130,42 @@ app.post("/notify", async (req, res) => {
   }
 });
 
-// ---- Notify reel like / comment / comment-like (NEW) ----
+// ---- Notify reel like / comment / comment-like / following-posted (v14 fix) ----
 //
 // FCM payload keys (received by ReelFCMNotificationHandler on client):
-//   reel_notif_type  → "like" | "comment" | "comment_like"
+//   reel_notif_type  → "like" | "comment" | "comment_like" | "comment_reply" |
+//                       "mention_caption" | "mention_comment" | "new_follower" |
+//                       "following_posted" | "duet" | "stitch" | ...
 //   sender_uid       → who performed the action
 //   sender_name      → display name of actor
 //   sender_photo     → avatar URL (fetched from DB if missing)
 //   reel_id          → target reel ID
 //   reel_thumb       → thumbnail URL for reel preview in notification
-//   comment_text     → comment body (for comment / comment_like)
+//   comment_text     → comment body (for comment / comment_like / comment_reply)
 //   comment_id       → comment Firebase key
+//
+// FIX v14: Android 14+ blocked dataSync foreground service from killed state.
+//          Client now uses shortService type — no OS restrictions.
+//          Server-side: added following_posted, comment_reply, mention_* types.
 //
 app.post("/notify/reel", async (req, res) => {
   if (!firebaseReady)
     return res.status(503).json({ error: "Firebase not configured" });
+
+  const VALID_REEL_TYPES = new Set([
+    "like", "comment", "comment_like", "comment_reply",
+    "mention_caption", "mention_comment", "new_follower",
+    "following_posted", "duet", "stitch", "video_reply",
+    "collab_request", "collab_accepted", "gift",
+    "live_started", "live_milestone", "close_friend_live",
+    "trending", "viral", "view_milestone", "follower_milestone",
+    "upload_complete", "upload_failed", "scheduled_post",
+    "scheduled_reminder", "product_tag_click", "creator_fund_payout",
+    "content_removed", "report_resolved", "sound_trending",
+    "pinned_comment", "close_friend_post", "challenge",
+    "reel_shared", "reel_saved", "reel_downloaded",
+    "weekly_digest", "collab_live"
+  ]);
 
   const {
     toUid, fromUid, fromName, fromPhoto,
@@ -152,7 +173,16 @@ app.post("/notify/reel", async (req, res) => {
   } = req.body || {};
 
   if (!toUid)   return res.status(400).json({ error: "toUid required" });
-  if (!reelId)  return res.status(400).json({ error: "reelId required" });
+  if (!type)    return res.status(400).json({ error: "type required" });
+  if (!VALID_REEL_TYPES.has(type))
+    return res.status(400).json({ error: "invalid reel_notif_type: " + type });
+
+  // reelId required for most types except new_follower / weekly_digest / etc
+  const noReelIdNeeded = ["new_follower", "weekly_digest", "follower_milestone",
+    "creator_fund_payout", "report_resolved", "upload_failed"];
+  if (!noReelIdNeeded.includes(type) && !reelId)
+    return res.status(400).json({ error: "reelId required for type: " + type });
+
   // Don't notify yourself
   if (toUid === fromUid) return res.json({ ok: true, dropped: "self" });
 
