@@ -67,7 +67,31 @@ app.post("/cloudinary/sign", (req, res) => {
   });
 });
 
-// ---- Notify single user ----
+// â”€â”€ Helper: extract last message text from Firebase snapshot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function getLastMsgText(histSnap) {
+  if (!histSnap || !histSnap.exists()) return "";
+  let lastText = "";
+  histSnap.forEach(child => {
+    const v    = child.val() || {};
+    const t    = String(v.text || "");
+    const type = String(v.type || "text");
+    if (t) { lastText = t; return; }
+    // media type fallback labels
+    if (type === "image") lastText = "ðŸ“· Photo";
+    else if (type === "video") lastText = "ðŸŽ¬ Video";
+    else if (type === "audio") lastText = "ðŸŽ¤ Voice message";
+    else if (type === "file" ) lastText = "ðŸ“Ž File";
+    else if (type === "pdf"  ) lastText = "ðŸ“„ PDF document";
+  });
+  return lastText;
+}
+
+// ---- Notify single user (v18 ZERO-FIREBASE on app side) ----
+//
+// NEW in v18: server now fetches permaBlocked, blocked, lastMsg in ONE
+// parallel Promise.all call and sends them as FCM flags.
+// App receives everything it needs â€” zero Firebase calls on device (~10ms).
+//
 app.post("/notify", async (req, res) => {
   if (!firebaseReady)
     return res.status(503).json({ error: "Firebase not configured" });
@@ -76,54 +100,92 @@ app.post("/notify", async (req, res) => {
     chatId, messageId, mediaUrl, force
   } = req.body || {};
   if (!toUid) return res.status(400).json({ error: "toUid required" });
+
+  const isCall = (type === "call" || type === "video_call");
+
   try {
-    if (!force && fromUid) {
-      try {
-        const pbSnap = await admin.database()
-          .ref("permaBlocked/" + toUid + "/" + fromUid).once("value");
-        if (pbSnap.val() === true) {
-          return res.json({ ok: true, dropped: "permaBlocked" });
-        }
-      } catch (e) { /* best-effort */ }
-    }
-    const snap = await admin.database().ref("users/" + toUid).once("value");
-    const user = snap.val() || {};
+    const db = admin.database();
+
+    // â”€â”€ Step 1: All reads in ONE parallel batch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const reads = [
+      db.ref("users/" + toUid).once("value"),                                    // [0] receiver
+      fromUid ? db.ref("users/" + fromUid).once("value") : Promise.resolve(null),// [1] sender
+      (!force && fromUid && chatId && !isCall)
+        ? db.ref("permaBlocked/" + toUid + "/" + fromUid).once("value")
+        : Promise.resolve(null),                                                  // [2] permaBlocked
+      (!force && fromUid && !isCall)
+        ? db.ref("blocked/" + toUid + "/" + fromUid).once("value")
+        : Promise.resolve(null),                                                  // [3] blocked
+      (!force && fromUid && !isCall)
+        ? db.ref("muted/" + toUid + "/" + fromUid).once("value")
+        : Promise.resolve(null),                                                  // [4] muted
+      (chatId && !isCall)
+        ? db.ref("messages/" + chatId).orderByChild("timestamp").limitToLast(1).once("value")
+        : Promise.resolve(null)                                                   // [5] lastMsg
+    ];
+
+    const [receiverSnap, senderSnap, pbSnap, blockedSnap, mutedSnap, histSnap]
+      = await Promise.all(reads);
+
+    // â”€â”€ Step 2: Check receiver â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const user = receiverSnap ? (receiverSnap.val() || {}) : {};
     if (!user.fcmToken)
       return res.status(404).json({ error: "no token" });
+
+    // â”€â”€ Step 3: Block checks (server drops call notifications too) â”€â”€â”€â”€â”€â”€â”€â”€
+    const isPermaBlocked = pbSnap && pbSnap.val() === true;
+    const isBlocked      = blockedSnap && blockedSnap.val() === true;
+
+    if (isPermaBlocked)
+      return res.json({ ok: true, dropped: "permaBlocked" });
+
+    // blocked â†’ still deliver but app shows blocked UI (send flag, don't drop)
+
+    // â”€â”€ Step 4: Sender info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let fromMobile = "", fromPhoto = "", fromThumb = "", fromLastSeen = "0";
-    if (fromUid) {
-      try {
-        const fSnap = await admin.database()
-          .ref("users/" + fromUid).once("value");
-        const f = fSnap.val() || {};
-        fromMobile   = String(f.mobile || f.callxId || "");
-        fromPhoto    = String(f.photoUrl || "");
-        fromThumb    = String(f.thumbUrl || "");   // thumb_100px — notification avatar
-        fromLastSeen = String(f.lastSeen || 0);
-      } catch (e) { /* best-effort */ }
+    if (senderSnap) {
+      const f   = senderSnap.val() || {};
+      fromMobile   = String(f.mobile   || f.callxId || "");
+      fromPhoto    = String(f.photoUrl || "");
+      fromThumb    = String(f.thumbUrl || "");
+      fromLastSeen = String(f.lastSeen || 0);
     }
+
+    // â”€â”€ Step 5: Last message text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const lastMsg = getLastMsgText(histSnap);
+
+    // â”€â”€ Step 6: Muted flag â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const isMuted = mutedSnap && mutedSnap.val() === true;
+
+    // â”€â”€ Step 7: Build FCM message with ALL flags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const message = {
       token: user.fcmToken,
       data: {
-        type:         String(type || "message"),
-        fromUid:      String(fromUid || ""),
-        fromName:     String(fromName || ""),
+        type:         String(type      || "message"),
+        fromUid:      String(fromUid   || ""),
+        fromName:     String(fromName  || ""),
         fromMobile:   fromMobile,
         fromPhoto:    fromPhoto,
-        fromThumb:    fromThumb,              // thumbnail (100px WebP) — fast notification avatar
+        fromThumb:    fromThumb,
         fromLastSeen: fromLastSeen,
-        chatId:       String(chatId || ""),
+        chatId:       String(chatId    || ""),
         messageId:    String(messageId || ""),
-        mediaUrl:     String(mediaUrl || ""),
-        text:         String(text || ""),
-        ...((type === "call" || type === "video_call") && text
-            ? { callId: String(text) } : {})
+        mediaUrl:     String(mediaUrl  || ""),
+        text:         String(text      || ""),
+        // â”€â”€ v18 flags â€” app reads these, skips Firebase calls â”€â”€
+        permaBlocked: "0",                                    // already dropped above if true
+        blocked:      isBlocked  ? "1" : "0",
+        muted:        isMuted    ? "1" : "0",
+        lastMsg:      lastMsg,
+        // â”€â”€ call helper â”€â”€
+        ...(isCall && text ? { callId: String(text) } : {})
       },
       android: {
-        priority: "high",
-        ...((type === "call" || type === "video_call") ? { ttl: 30000 } : {})
+        priority: (isMuted && !isCall) ? "normal" : "high",
+        ...(isCall ? { ttl: 30000 } : {})
       }
     };
+
     const r = await admin.messaging().send(message);
     res.json({ ok: true, id: r });
   } catch (e) {
@@ -135,19 +197,19 @@ app.post("/notify", async (req, res) => {
 // ---- Notify reel like / comment / comment-like / following-posted (v14 fix) ----
 //
 // FCM payload keys (received by ReelFCMNotificationHandler on client):
-//   reel_notif_type  → "like" | "comment" | "comment_like" | "comment_reply" |
+//   reel_notif_type  â†’ "like" | "comment" | "comment_like" | "comment_reply" |
 //                       "mention_caption" | "mention_comment" | "new_follower" |
 //                       "following_posted" | "duet" | "stitch" | ...
-//   sender_uid       → who performed the action
-//   sender_name      → display name of actor
-//   sender_photo     → avatar URL (fetched from DB if missing)
-//   reel_id          → target reel ID
-//   reel_thumb       → thumbnail URL for reel preview in notification
-//   comment_text     → comment body (for comment / comment_like / comment_reply)
-//   comment_id       → comment Firebase key
+//   sender_uid       â†’ who performed the action
+//   sender_name      â†’ display name of actor
+//   sender_photo     â†’ avatar URL (fetched from DB if missing)
+//   reel_id          â†’ target reel ID
+//   reel_thumb       â†’ thumbnail URL for reel preview in notification
+//   comment_text     â†’ comment body (for comment / comment_like / comment_reply)
+//   comment_id       â†’ comment Firebase key
 //
 // FIX v14: Android 14+ blocked dataSync foreground service from killed state.
-//          Client now uses shortService type — no OS restrictions.
+//          Client now uses shortService type â€” no OS restrictions.
 //          Server-side: added following_posted, comment_reply, mention_* types.
 //
 app.post("/notify/reel", async (req, res) => {
@@ -299,7 +361,7 @@ app.post("/notify/group", async (req, res) => {
             fromUid:        String(fromUid || ""),
             fromName:       String(fromName || ""),
             fromPhoto:      senderPhoto,    // full URL (profile screen ke liye)
-            fromThumb:      senderPhoto,    // same ref — already thumbUrl prefer kiya upar
+            fromThumb:      senderPhoto,    // same ref â€” already thumbUrl prefer kiya upar
             fromMobile:     senderMobile,
             fromLastSeen:   senderLastSeen,
             messageId:      String(messageId || ""),
