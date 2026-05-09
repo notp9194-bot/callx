@@ -80,11 +80,11 @@ function getHistoryJson(histSnap, receiverUid) {
     const ts   = Number(v.timestamp || Date.now());
     const sid  = String(v.senderId || v.fromUid || "");
     if (!t) {
-      if (type === "image") t = "📷 Photo";
-      else if (type === "video") t = "🎬 Video";
-      else if (type === "audio") t = "🎤 Voice message";
-      else if (type === "file" ) t = "📎 File";
-      else if (type === "pdf"  ) t = "📄 PDF document";
+      if (type === "image") t = "\uD83D\uDCF7 Photo";           // 📷
+      else if (type === "video") t = "\uD83C\uDFAC Video";      // 🎬
+      else if (type === "audio") t = "\uD83C\uDFA4 Voice message"; // 🎤
+      else if (type === "file" ) t = "\uD83D\uDCCE File";       // 📎
+      else if (type === "pdf"  ) t = "\uD83D\uDCC4 PDF document"; // 📄
       else t = "Message";
     }
     items.push({ t, ts, me: sid === receiverUid });
@@ -93,11 +93,12 @@ function getHistoryJson(histSnap, receiverUid) {
   return JSON.stringify(items);
 }
 
-// ---- Notify single user (v18 ZERO-FIREBASE on app side) ----
+// ---- Notify single user (v18 — zero Firebase on app side) ----
 //
-// NEW in v18: server now fetches permaBlocked, blocked, muted, history in ONE
-// parallel Promise.all call and sends them as FCM flags.
-// App receives everything it needs — zero Firebase calls on device (~10ms).
+// v18 change: server fetches permaBlocked, blocked, muted, history in ONE
+// parallel Promise.all batch and sends them as FCM data flags.
+// App receives everything it needs — no Firebase calls on device (~10ms).
+// myThumb field removed (was undefined); use fromThumb instead on client.
 //
 app.post("/notify", async (req, res) => {
   if (!firebaseReady)
@@ -179,13 +180,12 @@ app.post("/notify", async (req, res) => {
         messageId:    String(messageId || ""),
         mediaUrl:     String(mediaUrl  || ""),
         text:         String(text      || ""),
-        // ── v18 flags — app reads these, skips Firebase calls ──
-        // permaBlocked:"0" always sent (if true, server drops above — never reaches here)
+        // ── v18 flags — app reads these, zero Firebase calls on device ──
+        // permaBlocked is always "0" here; server drops above if true
         permaBlocked: "0",
         blocked:      (isBlocked  === true) ? "1" : "0",
         muted:        (isMuted    === true) ? "1" : "0",
         history:      history,
-        myThumb:      myThumb
         // ── call helper ──
         ...(isCall && text ? { callId: String(text) } : {})
       },
