@@ -90,7 +90,7 @@ app.post("/notify", async (req, res) => {
     const user = snap.val() || {};
     if (!user.fcmToken)
       return res.status(404).json({ error: "no token" });
-    let fromMobile = "", fromPhoto = "", fromLastSeen = "0";
+    let fromMobile = "", fromPhoto = "", fromThumb = "", fromLastSeen = "0";
     if (fromUid) {
       try {
         const fSnap = await admin.database()
@@ -98,6 +98,7 @@ app.post("/notify", async (req, res) => {
         const f = fSnap.val() || {};
         fromMobile   = String(f.mobile || f.callxId || "");
         fromPhoto    = String(f.photoUrl || "");
+        fromThumb    = String(f.thumbUrl || "");   // thumb_100px — notification avatar
         fromLastSeen = String(f.lastSeen || 0);
       } catch (e) { /* best-effort */ }
     }
@@ -109,6 +110,7 @@ app.post("/notify", async (req, res) => {
         fromName:     String(fromName || ""),
         fromMobile:   fromMobile,
         fromPhoto:    fromPhoto,
+        fromThumb:    fromThumb,              // thumbnail (100px WebP) — fast notification avatar
         fromLastSeen: fromLastSeen,
         chatId:       String(chatId || ""),
         messageId:    String(messageId || ""),
@@ -199,7 +201,9 @@ app.post("/notify/reel", async (req, res) => {
       try {
         const fSnap = await admin.database()
           .ref("users/" + fromUid).once("value");
-        senderPhoto = String((fSnap.val() || {}).photoUrl || "");
+        const fVal = fSnap.val() || {};
+        // thumbUrl prefer karo (small, fast download)
+        senderPhoto = String(fVal.thumbUrl || fVal.photoUrl || "");
       } catch (e) { /* best-effort */ }
     }
 
@@ -258,7 +262,7 @@ app.post("/notify/group", async (req, res) => {
         const fSnap = await admin.database()
           .ref("users/" + fromUid).once("value");
         const f = fSnap.val() || {};
-        if (!senderPhoto) senderPhoto = String(f.photoUrl || "");
+        if (!senderPhoto) senderPhoto = String(f.thumbUrl || f.photoUrl || "");
         senderMobile   = String(f.mobile || f.callxId || "");
         senderLastSeen = String(f.lastSeen || 0);
       } catch (e) { /* best-effort */ }
@@ -294,7 +298,8 @@ app.post("/notify/group", async (req, res) => {
             groupIcon:      groupIcon,
             fromUid:        String(fromUid || ""),
             fromName:       String(fromName || ""),
-            fromPhoto:      senderPhoto,
+            fromPhoto:      senderPhoto,    // full URL (profile screen ke liye)
+            fromThumb:      senderPhoto,    // same ref — already thumbUrl prefer kiya upar
             fromMobile:     senderMobile,
             fromLastSeen:   senderLastSeen,
             messageId:      String(messageId || ""),
