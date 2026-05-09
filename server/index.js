@@ -184,6 +184,7 @@ app.post("/notify", async (req, res) => {
         blocked:      isBlocked  ? "1" : "0",
         muted:        isMuted    ? "1" : "0",
         history:      history,      // JSON array [{t,ts,me}] â€” app builds MessagingStyle
+        myThumb:      myThumb,       // receiver ki photo â€” "me" Person avatar ke liye
         // â”€â”€ call helper â”€â”€
         ...(isCall && text ? { callId: String(text) } : {})
       },
