@@ -67,28 +67,35 @@ app.post("/cloudinary/sign", (req, res) => {
   });
 });
 
-// â”€â”€ Helper: extract last message text from Firebase snapshot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function getLastMsgText(histSnap) {
+// â”€â”€ Helper: build history JSON from Firebase snapshot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Returns JSON string: [{"t":"Hi","ts":1234567890,"me":false}, ...]
+// "me":true = message sent BY the notification receiver (their own bubble)
+function getHistoryJson(histSnap, receiverUid) {
   if (!histSnap || !histSnap.exists()) return "";
-  let lastText = "";
+  const items = [];
   histSnap.forEach(child => {
     const v    = child.val() || {};
-    const t    = String(v.text || "");
     const type = String(v.type || "text");
-    if (t) { lastText = t; return; }
-    // media type fallback labels
-    if (type === "image") lastText = "ðŸ“· Photo";
-    else if (type === "video") lastText = "ðŸŽ¬ Video";
-    else if (type === "audio") lastText = "ðŸŽ¤ Voice message";
-    else if (type === "file" ) lastText = "ðŸ“Ž File";
-    else if (type === "pdf"  ) lastText = "ðŸ“„ PDF document";
+    let   t    = String(v.text || "");
+    const ts   = Number(v.timestamp || Date.now());
+    const sid  = String(v.senderId || v.fromUid || "");
+    if (!t) {
+      if (type === "image") t = "ðŸ“· Photo";
+      else if (type === "video") t = "ðŸŽ¬ Video";
+      else if (type === "audio") t = "ðŸŽ¤ Voice message";
+      else if (type === "file" ) t = "ðŸ“Ž File";
+      else if (type === "pdf"  ) t = "ðŸ“„ PDF document";
+      else t = "Message";
+    }
+    items.push({ t, ts, me: sid === receiverUid });
   });
-  return lastText;
+  items.sort((a, b) => a.ts - b.ts);
+  return JSON.stringify(items);
 }
 
 // ---- Notify single user (v18 ZERO-FIREBASE on app side) ----
 //
-// NEW in v18: server now fetches permaBlocked, blocked, lastMsg in ONE
+// NEW in v18: server now fetches permaBlocked, blocked, muted, history in ONE
 // parallel Promise.all call and sends them as FCM flags.
 // App receives everything it needs â€” zero Firebase calls on device (~10ms).
 //
@@ -121,7 +128,7 @@ app.post("/notify", async (req, res) => {
         : Promise.resolve(null),                                                  // [4] muted
       (chatId && !isCall)
         ? db.ref("messages/" + chatId).orderByChild("timestamp").limitToLast(1).once("value")
-        : Promise.resolve(null)                                                   // [5] lastMsg
+        : Promise.resolve(null)                                                   // [5] history (last 1 msg)
     ];
 
     const [receiverSnap, senderSnap, pbSnap, blockedSnap, mutedSnap, histSnap]
@@ -152,7 +159,7 @@ app.post("/notify", async (req, res) => {
     }
 
     // â”€â”€ Step 5: Last message text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const lastMsg = getLastMsgText(histSnap);
+    const history = getHistoryJson(histSnap, toUid); // toUid = receiver
 
     // â”€â”€ Step 6: Muted flag â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const isMuted = mutedSnap && mutedSnap.val() === true;
@@ -176,7 +183,7 @@ app.post("/notify", async (req, res) => {
         permaBlocked: "0",                                    // already dropped above if true
         blocked:      isBlocked  ? "1" : "0",
         muted:        isMuted    ? "1" : "0",
-        lastMsg:      lastMsg,
+        history:      history,      // JSON array [{t,ts,me}] â€” app builds MessagingStyle
         // â”€â”€ call helper â”€â”€
         ...(isCall && text ? { callId: String(text) } : {})
       },
