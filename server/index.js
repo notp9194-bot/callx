@@ -373,12 +373,28 @@ app.post("/notify/group", async (req, res) => {
     // Fix 7: Build history JSON from snapshot (same helper as 1-1)
     const history = getHistoryJson(histSnap, null);
 
-    // Fix 5: @mention detection — mark which members are @mentioned
+    // Fix 14: @mention detection — @everyone/@all + individual @name (member displayName se)
     const mentionedUids = new Set();
     if (text) {
       const lower = text.toLowerCase();
       if (lower.includes("@everyone") || lower.includes("@all")) {
         memberUids.forEach(uid => mentionedUids.add(uid));
+      } else {
+        // Individual @name mention: tokenResults mein user data already hai
+        // Match karo har member ke displayName / name against @word tokens
+        const mentionTokens = (text.match(/@(\w+)/g) || [])
+          .map(t => t.slice(1).toLowerCase());
+        if (mentionTokens.length > 0) {
+          tokenResults.forEach((snap, idx) => {
+            if (!snap) return;
+            const u = snap.val() || {};
+            const name = String(u.name || u.displayName || "").toLowerCase().replace(/\s+/g, "");
+            const first = name.split(" ")[0];
+            if (mentionTokens.some(t => name.startsWith(t) || first.startsWith(t))) {
+              mentionedUids.add(memberUids[idx]);
+            }
+          });
+        }
       }
     }
 
@@ -427,7 +443,9 @@ app.post("/notify/group", async (req, res) => {
           },
           android: {
             priority:    isMuted ? "normal" : "high",
-            collapseKey: "grp_" + groupId,
+            // Fix 12: collapseKey per-message — fast messages drop nahi honge.
+            // messageId unique hota hai; agar missing ho toh timestamp fallback.
+            collapseKey: "grp_" + groupId + "_" + (messageId || Date.now()),
             ttl:         24 * 60 * 60 * 1000
           }
         });
