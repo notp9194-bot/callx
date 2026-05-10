@@ -67,7 +67,7 @@ app.post("/cloudinary/sign", (req, res) => {
   });
 });
 
-// â”€â”€ Helper: build history JSON from Firebase snapshot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Helper: build history JSON from Firebase snapshot ─────────────────────
 // Returns JSON string: [{"t":"Hi","ts":1234567890,"me":false}, ...]
 // "me":true = message sent BY the notification receiver (their own bubble)
 function getHistoryJson(histSnap, receiverUid) {
@@ -77,16 +77,16 @@ function getHistoryJson(histSnap, receiverUid) {
     const v    = child.val() || {};
     const type = String(v.type || "text");
     let   t    = String(v.text || "");
-    // Fix 7: use actual DB timestamp â€” avoids client clock mismatch reorder
+    // Fix 7: use actual DB timestamp — avoids client clock mismatch reorder
     const ts   = Number(v.timestamp || 0);
     if (ts === 0) return; // skip entries with no timestamp
     const sid  = String(v.senderId || v.fromUid || "");
     if (!t) {
-      if (type === "image") t = "\uD83D\uDCF7 Photo";           // ðŸ“·
-      else if (type === "video") t = "\uD83C\uDFAC Video";      // ðŸŽ¬
-      else if (type === "audio") t = "\uD83C\uDFA4 Voice message"; // ðŸŽ¤
-      else if (type === "file" ) t = "\uD83D\uDCCE File";       // ðŸ“Ž
-      else if (type === "pdf"  ) t = "\uD83D\uDCC4 PDF document"; // ðŸ“„
+      if (type === "image") t = "\uD83D\uDCF7 Photo";           // 📷
+      else if (type === "video") t = "\uD83C\uDFAC Video";      // 🎬
+      else if (type === "audio") t = "\uD83C\uDFA4 Voice message"; // 🎤
+      else if (type === "file" ) t = "\uD83D\uDCCE File";       // 📎
+      else if (type === "pdf"  ) t = "\uD83D\uDCC4 PDF document"; // 📄
       else t = "Message";
     }
     items.push({ t, ts, me: sid === receiverUid });
@@ -95,11 +95,11 @@ function getHistoryJson(histSnap, receiverUid) {
   return JSON.stringify(items);
 }
 
-// ---- Notify single user (v18 â€” zero Firebase on app side) ----
+// ---- Notify single user (v18 — zero Firebase on app side) ----
 //
 // v18 change: server fetches permaBlocked, blocked, muted, history in ONE
 // parallel Promise.all batch and sends them as FCM data flags.
-// App receives everything it needs â€” no Firebase calls on device (~10ms).
+// App receives everything it needs — no Firebase calls on device (~10ms).
 // myThumb field removed (was undefined); use fromThumb instead on client.
 //
 app.post("/notify", async (req, res) => {
@@ -116,7 +116,7 @@ app.post("/notify", async (req, res) => {
   try {
     const db = admin.database();
 
-    // â”€â”€ Step 1: All reads in ONE parallel batch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Step 1: All reads in ONE parallel batch ───────────────────────────
     const reads = [
       db.ref("users/" + toUid).once("value"),                                    // [0] receiver
       fromUid ? db.ref("users/" + fromUid).once("value") : Promise.resolve(null),// [1] sender
@@ -137,23 +137,23 @@ app.post("/notify", async (req, res) => {
     const [receiverSnap, senderSnap, pbSnap, blockedSnap, mutedSnap, histSnap]
       = await Promise.all(reads);
 
-    // â”€â”€ Step 2: Check receiver â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Step 2: Check receiver ────────────────────────────────────────────
     const user = receiverSnap ? (receiverSnap.val() || {}) : {};
     if (!user.fcmToken)
       return res.status(404).json({ error: "no token" });
-    // Fix 6: receiver ka thumb â€” client "me" bubble pe avatar dikhane ke liye
+    // Fix 6: receiver ka thumb — client "me" bubble pe avatar dikhane ke liye
     const myThumb = String(user.thumbUrl || user.photoUrl || "");
 
-    // â”€â”€ Step 3: Block checks (server drops call notifications too) â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Step 3: Block checks (server drops call notifications too) ────────
     const isPermaBlocked = pbSnap && pbSnap.val() === true;
     const isBlocked      = blockedSnap && blockedSnap.val() === true;
 
     if (isPermaBlocked)
       return res.json({ ok: true, dropped: "permaBlocked" });
 
-    // blocked â†’ still deliver but app shows blocked UI (send flag, don't drop)
+    // blocked → still deliver but app shows blocked UI (send flag, don't drop)
 
-    // â”€â”€ Step 4: Sender info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Step 4: Sender info ───────────────────────────────────────────────
     let fromMobile = "", fromPhoto = "", fromThumb = "", fromLastSeen = "0";
     if (senderSnap) {
       const f   = senderSnap.val() || {};
@@ -163,13 +163,13 @@ app.post("/notify", async (req, res) => {
       fromLastSeen = String(f.lastSeen || 0);
     }
 
-    // â”€â”€ Step 5: Last message text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Step 5: Last message text ─────────────────────────────────────────
     const history = getHistoryJson(histSnap, toUid); // toUid = receiver
 
-    // â”€â”€ Step 6: Muted flag â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Step 6: Muted flag ────────────────────────────────────────────────
     const isMuted = mutedSnap && mutedSnap.val() === true;
 
-    // â”€â”€ Step 7: Build FCM message with ALL flags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Step 7: Build FCM message with ALL flags ──────────────────────────
     const message = {
       token: user.fcmToken,
       data: {
@@ -184,14 +184,14 @@ app.post("/notify", async (req, res) => {
         messageId:    String(messageId || ""),
         mediaUrl:     String(mediaUrl  || ""),
         text:         String(text      || ""),
-        // â”€â”€ v18 flags â€” app reads these, zero Firebase calls on device â”€â”€
+        // ── v18 flags — app reads these, zero Firebase calls on device ──
         // permaBlocked is always "0" here; server drops above if true
         permaBlocked: "0",
         blocked:      (isBlocked  === true) ? "1" : "0",
         muted:        (isMuted    === true) ? "1" : "0",
         history:      history,
         myThumb:      myThumb,
-        // â”€â”€ call helper â”€â”€
+        // ── call helper ──
         ...(isCall && text ? { callId: String(text) } : {})
       },
       android: {
@@ -211,19 +211,19 @@ app.post("/notify", async (req, res) => {
 // ---- Notify reel like / comment / comment-like / following-posted (v14 fix) ----
 //
 // FCM payload keys (received by ReelFCMNotificationHandler on client):
-//   reel_notif_type  â†’ "like" | "comment" | "comment_like" | "comment_reply" |
+//   reel_notif_type  → "like" | "comment" | "comment_like" | "comment_reply" |
 //                       "mention_caption" | "mention_comment" | "new_follower" |
 //                       "following_posted" | "duet" | "stitch" | ...
-//   sender_uid       â†’ who performed the action
-//   sender_name      â†’ display name of actor
-//   sender_photo     â†’ avatar URL (fetched from DB if missing)
-//   reel_id          â†’ target reel ID
-//   reel_thumb       â†’ thumbnail URL for reel preview in notification
-//   comment_text     â†’ comment body (for comment / comment_like / comment_reply)
-//   comment_id       â†’ comment Firebase key
+//   sender_uid       → who performed the action
+//   sender_name      → display name of actor
+//   sender_photo     → avatar URL (fetched from DB if missing)
+//   reel_id          → target reel ID
+//   reel_thumb       → thumbnail URL for reel preview in notification
+//   comment_text     → comment body (for comment / comment_like / comment_reply)
+//   comment_id       → comment Firebase key
 //
 // FIX v14: Android 14+ blocked dataSync foreground service from killed state.
-//          Client now uses shortService type â€” no OS restrictions.
+//          Client now uses shortService type — no OS restrictions.
 //          Server-side: added following_posted, comment_reply, mention_* types.
 //
 app.post("/notify/reel", async (req, res) => {
@@ -309,7 +309,14 @@ app.post("/notify/reel", async (req, res) => {
   }
 });
 
-// ---- Notify group (production-grade fanout) ----
+// ---- Notify group (production-grade fanout v2) ----
+//
+// v2 fixes:
+//   Fix 4: msgId key added (client reads "msgId", server was only sending "messageId")
+//   Fix 5: mention/priority flags sent in payload
+//   Fix 6: permaBlocked + user token fetches batched in ONE Promise.all (not serial inside loop)
+//   Fix 7: group history fetched server-side (same as 1-1 notify) — zero Firebase on client
+//
 app.post("/notify/group", async (req, res) => {
   if (!firebaseReady)
     return res.status(503).json({ error: "Firebase not configured" });
@@ -319,45 +326,74 @@ app.post("/notify/group", async (req, res) => {
   } = req.body || {};
   if (!groupId) return res.status(400).json({ error: "groupId required" });
   try {
-    const gSnap = await admin.database()
-      .ref("groups/" + groupId).once("value");
+    const db = admin.database();
+    const gSnap = await db.ref("groups/" + groupId).once("value");
     const g = gSnap.val();
     if (!g) return res.status(404).json({ error: "group not found" });
 
-    const groupName = String(g.name || "Group");
-    const groupIcon = String(g.iconUrl || "");
-    const memberUids = Object.keys(g.members || {})
-      .filter(uid => uid !== fromUid);
-    const mutedBy = g.mutedBy || {};
+    const groupName  = String(g.name    || "Group");
+    const groupIcon  = String(g.iconUrl || "");
+    const memberUids = Object.keys(g.members || {}).filter(uid => uid !== fromUid);
+    const mutedBy    = g.mutedBy || {};
 
-    let senderPhoto   = String(fromPhoto || "");
-    let senderMobile  = "";
+    // Fix 6: ONE big Promise.all — sender info + history + all permaBlocked + all user tokens
+    const sharedReads = [
+      fromUid
+        ? db.ref("users/" + fromUid).once("value")
+        : Promise.resolve(null),                                           // [0] sender
+      db.ref("messages/" + groupId)
+        .orderByChild("timestamp").limitToLast(5).once("value")           // [1] Fix 7: group history
+    ];
+    // permaBlocked per member — index 2...(2+N-1)
+    const pbReads = memberUids.map(uid =>
+      fromUid
+        ? db.ref("permaBlocked/" + uid + "/" + fromUid).once("value")
+        : Promise.resolve(null)
+    );
+    // user token reads — index (2+N)...(2+2N-1)
+    const tokenReads = memberUids.map(uid => db.ref("users/" + uid).once("value"));
+
+    const allResults = await Promise.all([...sharedReads, ...pbReads, ...tokenReads]);
+
+    const senderSnap   = allResults[0];
+    const histSnap     = allResults[1];
+    const pbResults    = allResults.slice(2, 2 + memberUids.length);
+    const tokenResults = allResults.slice(2 + memberUids.length);
+
+    let senderPhoto    = String(fromPhoto || "");
+    let senderMobile   = "";
     let senderLastSeen = "0";
-    if (fromUid) {
-      try {
-        const fSnap = await admin.database()
-          .ref("users/" + fromUid).once("value");
-        const f = fSnap.val() || {};
-        if (!senderPhoto) senderPhoto = String(f.thumbUrl || f.photoUrl || "");
-        senderMobile   = String(f.mobile || f.callxId || "");
-        senderLastSeen = String(f.lastSeen || 0);
-      } catch (e) { /* best-effort */ }
+    if (senderSnap) {
+      const f = senderSnap.val() || {};
+      if (!senderPhoto) senderPhoto = String(f.thumbUrl || f.photoUrl || "");
+      senderMobile    = String(f.mobile || f.callxId || "");
+      senderLastSeen  = String(f.lastSeen || 0);
     }
 
-    const updates = {};
+    // Fix 7: Build history JSON from snapshot (same helper as 1-1)
+    const history = getHistoryJson(histSnap, null);
+
+    // Fix 5: @mention detection — mark which members are @mentioned
+    const mentionedUids = new Set();
+    if (text) {
+      const lower = text.toLowerCase();
+      if (lower.includes("@everyone") || lower.includes("@all")) {
+        memberUids.forEach(uid => mentionedUids.add(uid));
+      }
+    }
+
+    const updates     = {};
     const staleTokens = [];
     let sent = 0, dropped = 0;
 
-    await Promise.all(memberUids.map(async (uid) => {
+    await Promise.all(memberUids.map(async (uid, idx) => {
       try {
-        if (fromUid) {
-          const pbSnap = await admin.database()
-            .ref("permaBlocked/" + uid + "/" + fromUid).once("value");
-          if (pbSnap.val() === true) { dropped++; return; }
-        }
-        const us = await admin.database()
-          .ref("users/" + uid).once("value");
-        const u = us.val() || {};
+        // Fix 6: Use pre-fetched permaBlocked result (no extra Firebase call)
+        const pbSnap = pbResults[idx];
+        if (pbSnap && pbSnap.val() === true) { dropped++; return; }
+
+        // Fix 6: Use pre-fetched token result
+        const u  = tokenResults[idx] ? (tokenResults[idx].val() || {}) : {};
         const tk = u.fcmToken;
         if (!tk) { dropped++; return; }
 
@@ -368,48 +404,51 @@ app.post("/notify/group", async (req, res) => {
         await admin.messaging().send({
           token: tk,
           data: {
-            type:           String(type || "group_message"),
-            groupId:        String(groupId),
-            groupName:      groupName,
-            groupIcon:      groupIcon,
-            fromUid:        String(fromUid || ""),
-            fromName:       String(fromName || ""),
-            fromPhoto:      senderPhoto,    // full URL (profile screen ke liye)
-            fromThumb:      senderPhoto,    // same ref â€” already thumbUrl prefer kiya upar
-            fromMobile:     senderMobile,
-            fromLastSeen:   senderLastSeen,
-            messageId:      String(messageId || ""),
-            mediaUrl:       String(mediaUrl  || ""),
-            text:           String(text      || ""),
-            muted:          isMuted ? "1" : "0"
+            type:          String(type || "group_message"),
+            groupId:       String(groupId),
+            groupName:     groupName,
+            groupIcon:     groupIcon,
+            fromUid:       String(fromUid   || ""),
+            fromName:      String(fromName  || ""),
+            fromPhoto:     senderPhoto,
+            fromThumb:     senderPhoto,
+            fromMobile:    senderMobile,
+            fromLastSeen:  senderLastSeen,
+            messageId:     String(messageId || ""),
+            msgId:         String(messageId || ""),  // Fix 4: client reads "msgId"
+            mediaUrl:      String(mediaUrl  || ""),
+            text:          String(text      || ""),
+            muted:         isMuted ? "1" : "0",
+            // Fix 5: mention / priority flags
+            mention:       mentionedUids.has(uid) ? "true" : "false",
+            priority:      "false",
+            // Fix 7: group history from server — client skips Firebase
+            history:       history
           },
           android: {
-            priority: isMuted ? "normal" : "high",
+            priority:    isMuted ? "normal" : "high",
             collapseKey: "grp_" + groupId,
-            ttl: 24 * 60 * 60 * 1000
+            ttl:         24 * 60 * 60 * 1000
           }
         });
         sent++;
       } catch (e) {
-        const code = e && (e.code || e.errorInfo && e.errorInfo.code);
+        const code = e && (e.code || (e.errorInfo && e.errorInfo.code));
         if (code === "messaging/registration-token-not-registered" ||
             code === "messaging/invalid-registration-token") {
           staleTokens.push(uid);
         } else {
-          console.warn("group send fail (" + uid + "):",
-            e && e.message ? e.message : e);
+          console.warn("group send fail (" + uid + "):", e && e.message ? e.message : e);
         }
         dropped++;
       }
     }));
 
     try {
-      if (Object.keys(updates).length)
-        await admin.database().ref().update(updates);
+      if (Object.keys(updates).length) await db.ref().update(updates);
     } catch (e) { /* ignore */ }
     try {
-      for (const uid of staleTokens)
-        await admin.database().ref("users/" + uid + "/fcmToken").remove();
+      for (const uid of staleTokens) await db.ref("users/" + uid + "/fcmToken").remove();
     } catch (e) { /* ignore */ }
 
     res.json({ ok: true, sent, dropped, members: memberUids.length });
