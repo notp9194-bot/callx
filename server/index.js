@@ -534,5 +534,34 @@ app.post("/notify/status", async (req, res) => {
   }
 });
 
+// ---- Android App Links — Digital Asset Links ----
+// Ye file Android OS verify karta hai taaki app "verified links" mile
+// Path: https://your-domain.com/.well-known/assetlinks.json
+const ASSET_LINKS = [
+  {
+    relation: ["delegate_permission/common.handle_all_urls"],
+    target: {
+      namespace: "android_app",
+      package_name: "com.callx.app",
+      sha256_cert_fingerprints: [
+        "92:31:CD:9F:90:15:45:54:3B:92:D8:21:FC:6E:1F:DC:D5:40:8B:F0:69:04:96:85:BD:30:99:50:1A:EB:5D:03"
+      ]
+    }
+  }
+];
+
+// Route 1: Standard path jo Android verify karta hai
+app.get("/.well-known/assetlinks.json", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.json(ASSET_LINKS);
+});
+
+// Route 2: Direct path (fallback / manual test ke liye)
+app.get("/assetlinks.json", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.json(ASSET_LINKS);
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("callx-server v2 on :" + PORT));
