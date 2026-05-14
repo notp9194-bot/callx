@@ -111,7 +111,11 @@ app.post("/notify", async (req, res) => {
   } = req.body || {};
   if (!toUid) return res.status(400).json({ error: "toUid required" });
 
-  const isCall = (type === "call" || type === "video_call");
+  const isCall        = (type === "call" || type === "video_call");
+  // FIX: status_reply ke liye block/mute checks skip karo
+  const isStatusReply = (type === "status_reply");
+  const isMissedCall  = (type === "call_missed");
+  const skipBlockChecks = isStatusReply || isMissedCall;
 
   try {
     const db = admin.database();
@@ -120,13 +124,13 @@ app.post("/notify", async (req, res) => {
     const reads = [
       db.ref("users/" + toUid).once("value"),                                    // [0] receiver
       fromUid ? db.ref("users/" + fromUid).once("value") : Promise.resolve(null),// [1] sender
-      (!force && fromUid && !isCall)
+      (!force && fromUid && !isCall && !skipBlockChecks)
         ? db.ref("permaBlocked/" + toUid + "/" + fromUid).once("value")
         : Promise.resolve(null),                                                  // [2] permaBlocked
-      (!force && fromUid && !isCall)
+      (!force && fromUid && !isCall && !skipBlockChecks)
         ? db.ref("blocked/" + toUid + "/" + fromUid).once("value")
         : Promise.resolve(null),                                                  // [3] blocked
-      (!force && fromUid && !isCall)
+      (!force && fromUid && !isCall && !skipBlockChecks)
         ? db.ref("muted/" + toUid + "/" + fromUid).once("value")
         : Promise.resolve(null),                                                  // [4] muted
       (chatId && !isCall)
@@ -145,29 +149,30 @@ app.post("/notify", async (req, res) => {
     const myThumb = String(user.thumbUrl || user.photoUrl || "");
 
     // â”€â”€ Step 3: Block checks (server drops call notifications too) â”€â”€â”€â”€â”€â”€â”€â”€
-    const isPermaBlocked = pbSnap && pbSnap.val() === true;
-    const isBlocked      = blockedSnap && blockedSnap.val() === true;
+    // FIX: status_reply ke liye block checks skip karo
+    const isPermaBlocked = !skipBlockChecks && pbSnap && pbSnap.val() === true;
+    const isBlocked      = !skipBlockChecks && blockedSnap && blockedSnap.val() === true;
 
     if (isPermaBlocked)
       return res.json({ ok: true, dropped: "permaBlocked" });
 
-    // blocked â†’ still deliver but app shows blocked UI (send flag, don't drop)
-
-    // â”€â”€ Step 4: Sender info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Step 4: Sender info — DB se photo fetch (status_reply mein bhi fresh photo chahiye)
     let fromMobile = "", fromPhoto = "", fromThumb = "", fromLastSeen = "0";
     if (senderSnap) {
       const f   = senderSnap.val() || {};
       fromMobile   = String(f.mobile   || f.callxId || "");
-      fromPhoto    = String(f.photoUrl || "");
+      fromPhoto    = String(f.photoUrl || req.body.fromPhoto || "");  // DB first, client fallback
       fromThumb    = String(f.thumbUrl || "");
       fromLastSeen = String(f.lastSeen || 0);
+    } else if (req.body.fromPhoto) {
+      fromPhoto = String(req.body.fromPhoto);  // no fromUid — client-sent photo use karo
     }
 
-    // â”€â”€ Step 5: Last message text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Step 5: Last message text
     const history = getHistoryJson(histSnap, toUid); // toUid = receiver
 
-    // â”€â”€ Step 6: Muted flag â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const isMuted = mutedSnap && mutedSnap.val() === true;
+    // Step 6: Muted flag (status_reply ke liye mute skip — personal notification)
+    const isMuted = !skipBlockChecks && mutedSnap && mutedSnap.val() === true;
 
     // â”€â”€ Step 7: Build FCM message with ALL flags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const message = {
@@ -195,7 +200,8 @@ app.post("/notify", async (req, res) => {
         ...(isCall && text ? { callId: String(text) } : {})
       },
       android: {
-        priority: (isMuted && !isCall) ? "normal" : "high",
+        // FIX: status_reply always high priority — heads-up dikhna chahiye
+        priority: (isMuted && !isCall && !isStatusReply) ? "normal" : "high",
         ...(isCall ? { ttl: 30000 } : {})
       }
     };
