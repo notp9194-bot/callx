@@ -964,3 +964,26 @@ app.listen(PORT, () => {
     });
   }, 14 * 60 * 1000);
 });
+
+{
+  "name": "callx-server",
+  "version": "3.0.0",
+  "description": "CallX backend server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cloudinary": "^1.41.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "firebase-admin": "^12.0.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}
+
