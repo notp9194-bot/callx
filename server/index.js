@@ -4,6 +4,19 @@ const morgan  = require("morgan");
 const crypto  = require("crypto");
 const admin   = require("firebase-admin");
 
+// ══════════════════════════════════════════════════════════════════════════════
+// FFmpeg binary path — @ffmpeg-installer/ffmpeg se auto-detect (Render safe)
+// ══════════════════════════════════════════════════════════════════════════════
+try {
+  const ffmpegInstaller = require("@ffmpeg-installer/ffmpeg");
+  const ffmpegLib       = require("fluent-ffmpeg");
+  ffmpegLib.setFfmpegPath(ffmpegInstaller.path);
+  console.log("[OK] FFmpeg binary path set:", ffmpegInstaller.path);
+} catch (e) {
+  console.warn("[WARN] @ffmpeg-installer/ffmpeg not found:", e.message,
+    "→ npm install @ffmpeg-installer/ffmpeg");
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
@@ -964,26 +977,3 @@ app.listen(PORT, () => {
     });
   }, 14 * 60 * 1000);
 });
-
-{
-  "name": "callx-server",
-  "version": "3.0.0",
-  "description": "CallX backend server",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "dependencies": {
-    "cloudinary": "^1.41.3",
-    "cors": "^2.8.5",
-    "express": "^4.18.2",
-    "firebase-admin": "^12.0.0",
-    "fluent-ffmpeg": "^2.1.3",
-    "morgan": "^1.10.0",
-    "multer": "^1.4.5-lts.1"
-  },
-  "engines": {
-    "node": ">=18.x"
-  }
-}
-
