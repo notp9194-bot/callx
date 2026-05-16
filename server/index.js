@@ -100,7 +100,7 @@ app.post("/cloudinary/sign", (req, res) => {
 // Response: { video_url, thumb_url, public_id, compressed_bytes }
 // ══════════════════════════════════════════════════════════════════════════════
 (function setupVideoCompress() {
-  let multer, cloudinary, ffmpeg, fs, os, path, { execFile };
+  let multer, cloudinary, ffmpeg, fs, os, path, execFile;
 
   try {
     multer     = require("multer");
@@ -109,7 +109,7 @@ app.post("/cloudinary/sign", (req, res) => {
     fs         = require("fs");
     os         = require("os");
     path       = require("path");
-    ({ execFile } = require("child_process"));
+    execFile   = require("child_process").execFile;
   } catch (e) {
     console.warn("[WARN] /compress/video deps missing:", e.message,
       "→ npm install multer cloudinary fluent-ffmpeg");
