@@ -4,19 +4,6 @@ const morgan  = require("morgan");
 const crypto  = require("crypto");
 const admin   = require("firebase-admin");
 
-// ══════════════════════════════════════════════════════════════════════════════
-// FFmpeg binary path — @ffmpeg-installer/ffmpeg se auto-detect (Render safe)
-// ══════════════════════════════════════════════════════════════════════════════
-try {
-  const ffmpegInstaller = require("@ffmpeg-installer/ffmpeg");
-  const ffmpegLib       = require("fluent-ffmpeg");
-  ffmpegLib.setFfmpegPath(ffmpegInstaller.path);
-  console.log("[OK] FFmpeg binary path set:", ffmpegInstaller.path);
-} catch (e) {
-  console.warn("[WARN] @ffmpeg-installer/ffmpeg not found:", e.message,
-    "→ npm install @ffmpeg-installer/ffmpeg");
-}
-
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
@@ -142,12 +129,14 @@ app.post("/cloudinary/sign", (req, res) => {
   });
 
   // Quality preset → FFmpeg params mapping
+  // CRF controls quality (lower = better), vb = max bitrate cap
+  // ultrafast preset = server pe fast encode, thoda size zyada but speed priority
   const QUALITY_MAP = {
-    "360p":    { scale: "scale=-2:360",   vb: "500k"  },
-    "480p":    { scale: "scale=-2:480",   vb: "1000k" },
-    "720p":    { scale: "scale=-2:720",   vb: "2000k" },
-    "1080p":   { scale: "scale=-2:1080",  vb: "4000k" },
-    "original": null  // skip FFmpeg, direct upload
+    "360p":    { scale: "scale=-2:360",  crf: "32", vb: "400k"  },
+    "480p":    { scale: "scale=-2:480",  crf: "28", vb: "800k"  },
+    "720p":    { scale: "scale=-2:720",  crf: "26", vb: "1500k" },
+    "1080p":   { scale: "scale=-2:1080", crf: "24", vb: "3000k" },
+    "original": null
   };
 
   app.post("/compress/video", upload.single("file"), async (req, res) => {
@@ -187,14 +176,17 @@ app.post("/cloudinary/sign", (req, res) => {
 
       if (preset) {
         await new Promise((resolve, reject) => {
-          let cmd = ffmpeg(inputPath)
+          ffmpeg(inputPath)
             .videoCodec("libx264")
             .audioCodec("aac")
             .outputOptions([
-              "-vf",      preset.scale,
-              "-b:v",     preset.vb,
-              "-preset",  "fast",
+              "-vf",       preset.scale,
+              "-crf",      preset.crf,        // quality-based compression
+              "-maxrate",  preset.vb,          // max bitrate cap
+              "-bufsize",  "2M",
+              "-preset",   "ultrafast",        // server pe fast encode
               "-movflags", "+faststart",
+              "-threads",  "2",               // Render free = 2 CPU threads
               "-y"
             ])
             .on("end", resolve)
@@ -206,32 +198,23 @@ app.post("/cloudinary/sign", (req, res) => {
 
       const compressedBytes = fs.statSync(uploadFile).size;
 
-      // ── Step 2: Upload compressed video to Cloudinary ─────────────────────
-      const videoUploadOpts = {
+      // ── Step 2: Cloudinary pe ek baar upload, thumb URL derive karo ──────
+      cloudinary.config({
+        cloud_name: cldCloud,
+        api_key:    cldKey,
+        api_secret: CLOUD_SEC
+      });
+
+      const videoResult = await cloudinary.uploader.upload(uploadFile, {
         resource_type: "video",
         folder:        "callx/videos/file",
-        ...(cldSig && cldTs ? {
-          signature:  cldSig,
-          timestamp:  cldTs,
-          api_key:    cldKey
-        } : {})
-      };
+        ...(cldSig && cldTs ? { signature: cldSig, timestamp: cldTs, api_key: cldKey } : {})
+      });
 
-      const videoResult = await cloudinary.uploader.upload(uploadFile, videoUploadOpts);
-
-      // ── Step 3: Generate thumbnail via Cloudinary eager ───────────────────
-      let thumbUrl = "";
-      try {
-        const thumbResult = await cloudinary.uploader.upload(uploadFile, {
-          resource_type: "video",
-          folder:        "callx/videos/thumb",
-          eager: [{ width: 400, height: 400, crop: "fill", format: "jpg" }]
-        });
-        thumbUrl = thumbResult.eager?.[0]?.secure_url || "";
-      } catch (thumbErr) {
-        console.warn("[compress/video] thumb upload failed:", thumbErr.message);
-        // Thumb fail hone pe video still return karo
-      }
+      // Thumb — Cloudinary URL transform se banao, double upload nahi
+      const thumbUrl = videoResult.secure_url
+        .replace("/upload/", "/upload/w_400,h_400,c_fill,so_0,f_jpg/")
+        .replace(/\.[^.]+$/, ".jpg");
 
       res.json({
         video_url:        videoResult.secure_url,
