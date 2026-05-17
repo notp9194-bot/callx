@@ -4,6 +4,16 @@ const morgan  = require("morgan");
 const crypto  = require("crypto");
 const admin   = require("firebase-admin");
 
+// ── FFmpeg binary path (Render / any server pe) ───────────────────────────────
+try {
+  const ffmpegInstaller = require("@ffmpeg-installer/ffmpeg");
+  const ffmpegLib       = require("fluent-ffmpeg");
+  ffmpegLib.setFfmpegPath(ffmpegInstaller.path);
+  console.log("[OK] FFmpeg binary path set:", ffmpegInstaller.path);
+} catch (e) {
+  console.warn("[WARN] @ffmpeg-installer/ffmpeg not found:", e.message);
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
@@ -80,6 +90,39 @@ app.post("/cloudinary/sign", (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Cloudinary VIDEO signed upload — eager transform support
+// POST /cloudinary/sign/video
+// Body: { folder, eager }
+// Response: { signature, timestamp, api_key, cloud_name, folder, eager }
+// ══════════════════════════════════════════════════════════════════════════════
+app.post("/cloudinary/sign/video", (req, res) => {
+  if (!cloudReady) {
+    return res.status(503).json({
+      error: "Cloudinary not configured",
+      hint: "Render dashboard pe CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET set karo"
+    });
+  }
+  const folder    = (req.body && req.body.folder) || "callx/videos/file";
+  const eager     = (req.body && req.body.eager)  || "";
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+
+  // Signature string — eager include karo agar present hai
+  let toSign = `folder=${folder}&timestamp=${timestamp}`;
+  if (eager) toSign = `eager=${eager}&` + toSign;
+
+  const signature = crypto.createHash("sha1")
+    .update(toSign + CLOUD_SEC).digest("hex");
+
+  res.json({
+    signature, timestamp,
+    api_key:    CLOUD_KEY,
+    cloud_name: CLOUD_NAME,
+    folder,
+    eager
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // VIDEO COMPRESS — Android v25 server-side compression endpoint
 // POST /compress/video  (multipart/form-data)
 //
@@ -129,14 +172,12 @@ app.post("/cloudinary/sign", (req, res) => {
   });
 
   // Quality preset → FFmpeg params mapping
-  // CRF controls quality (lower = better), vb = max bitrate cap
-  // ultrafast preset = server pe fast encode, thoda size zyada but speed priority
   const QUALITY_MAP = {
-    "360p":    { scale: "scale=-2:360",  crf: "32", vb: "400k"  },
-    "480p":    { scale: "scale=-2:480",  crf: "28", vb: "800k"  },
-    "720p":    { scale: "scale=-2:720",  crf: "26", vb: "1500k" },
-    "1080p":   { scale: "scale=-2:1080", crf: "24", vb: "3000k" },
-    "original": null
+    "360p":    { scale: "scale=-2:360",   vb: "500k"  },
+    "480p":    { scale: "scale=-2:480",   vb: "1000k" },
+    "720p":    { scale: "scale=-2:720",   vb: "2000k" },
+    "1080p":   { scale: "scale=-2:1080",  vb: "4000k" },
+    "original": null  // skip FFmpeg, direct upload
   };
 
   app.post("/compress/video", upload.single("file"), async (req, res) => {
@@ -176,17 +217,14 @@ app.post("/cloudinary/sign", (req, res) => {
 
       if (preset) {
         await new Promise((resolve, reject) => {
-          ffmpeg(inputPath)
+          let cmd = ffmpeg(inputPath)
             .videoCodec("libx264")
             .audioCodec("aac")
             .outputOptions([
-              "-vf",       preset.scale,
-              "-crf",      preset.crf,        // quality-based compression
-              "-maxrate",  preset.vb,          // max bitrate cap
-              "-bufsize",  "2M",
-              "-preset",   "ultrafast",        // server pe fast encode
+              "-vf",      preset.scale,
+              "-b:v",     preset.vb,
+              "-preset",  "fast",
               "-movflags", "+faststart",
-              "-threads",  "2",               // Render free = 2 CPU threads
               "-y"
             ])
             .on("end", resolve)
@@ -198,23 +236,32 @@ app.post("/cloudinary/sign", (req, res) => {
 
       const compressedBytes = fs.statSync(uploadFile).size;
 
-      // ── Step 2: Cloudinary pe ek baar upload, thumb URL derive karo ──────
-      cloudinary.config({
-        cloud_name: cldCloud,
-        api_key:    cldKey,
-        api_secret: CLOUD_SEC
-      });
-
-      const videoResult = await cloudinary.uploader.upload(uploadFile, {
+      // ── Step 2: Upload compressed video to Cloudinary ─────────────────────
+      const videoUploadOpts = {
         resource_type: "video",
         folder:        "callx/videos/file",
-        ...(cldSig && cldTs ? { signature: cldSig, timestamp: cldTs, api_key: cldKey } : {})
-      });
+        ...(cldSig && cldTs ? {
+          signature:  cldSig,
+          timestamp:  cldTs,
+          api_key:    cldKey
+        } : {})
+      };
 
-      // Thumb — Cloudinary URL transform se banao, double upload nahi
-      const thumbUrl = videoResult.secure_url
-        .replace("/upload/", "/upload/w_400,h_400,c_fill,so_0,f_jpg/")
-        .replace(/\.[^.]+$/, ".jpg");
+      const videoResult = await cloudinary.uploader.upload(uploadFile, videoUploadOpts);
+
+      // ── Step 3: Generate thumbnail via Cloudinary eager ───────────────────
+      let thumbUrl = "";
+      try {
+        const thumbResult = await cloudinary.uploader.upload(uploadFile, {
+          resource_type: "video",
+          folder:        "callx/videos/thumb",
+          eager: [{ width: 400, height: 400, crop: "fill", format: "jpg" }]
+        });
+        thumbUrl = thumbResult.eager?.[0]?.secure_url || "";
+      } catch (thumbErr) {
+        console.warn("[compress/video] thumb upload failed:", thumbErr.message);
+        // Thumb fail hone pe video still return karo
+      }
 
       res.json({
         video_url:        videoResult.secure_url,
@@ -234,6 +281,130 @@ app.post("/cloudinary/sign", (req, res) => {
   });
 
   console.log("[OK] /compress/video endpoint ready");
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// IMAGE COMPRESS — Server-side image compression (Mobile CPU zero load)
+// POST /compress/image  (multipart/form-data)
+//
+// Mobile ne raw image bheji → server sharp se resize + WebP compress kare →
+// Cloudinary pe upload kare → { image_url, thumb_url } return kare
+//
+// Fields:
+//   file   — raw image (JPEG/PNG/HEIC etc)
+//   folder — optional Cloudinary folder (default: callx/image)
+//
+// Response: { image_url, thumb_url, compressed_bytes, thumb_bytes }
+// ══════════════════════════════════════════════════════════════════════════════
+(function setupImageCompress() {
+  let multer, sharp, cloudinary, fs, os, path;
+
+  try {
+    multer    = require("multer");
+    sharp     = require("sharp");
+    cloudinary = require("cloudinary").v2;
+    fs        = require("fs");
+    os        = require("os");
+    path      = require("path");
+  } catch (e) {
+    console.warn("[WARN] /compress/image deps missing:", e.message,
+      "→ npm install sharp multer cloudinary");
+    app.post("/compress/image", (req, res) => {
+      res.status(503).json({
+        error: "Server image compress ready nahi hai",
+        hint: "npm install sharp"
+      });
+    });
+    return;
+  }
+
+  const upload = multer({
+    dest: os.tmpdir(),
+    limits: { fileSize: 50 * 1024 * 1024 } // 50 MB max
+  });
+
+  // Full image settings
+  const FULL_MAX_PX  = 1280;
+  const FULL_QUALITY = 80;
+  const FULL_MAX_KB  = 800;
+
+  // Thumbnail settings
+  const THUMB_SIZE    = 200;
+  const THUMB_QUALITY = 65;
+
+  app.post("/compress/image", upload.single("file"), async (req, res) => {
+    if (!cloudReady) {
+      return res.status(503).json({ error: "Cloudinary not configured" });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: "file field required" });
+    }
+
+    const inputPath  = req.file.path;
+    const outFull    = inputPath + "_full.webp";
+    const outThumb   = inputPath + "_thumb.webp";
+    const folder     = (req.body && req.body.folder) || "callx/image";
+
+    cloudinary.config({
+      cloud_name: CLOUD_NAME,
+      api_key:    CLOUD_KEY,
+      api_secret: CLOUD_SEC
+    });
+
+    try {
+      // ── Step 1: Sharp — full image resize + WebP ──────────────────────
+      await sharp(inputPath)
+        .rotate()                          // EXIF rotation auto-fix
+        .resize(FULL_MAX_PX, FULL_MAX_PX, {
+          fit: "inside",
+          withoutEnlargement: true
+        })
+        .webp({ quality: FULL_QUALITY })
+        .toFile(outFull);
+
+      // ── Step 2: Sharp — thumbnail 200×200 center crop ────────────────
+      await sharp(inputPath)
+        .rotate()
+        .resize(THUMB_SIZE, THUMB_SIZE, {
+          fit: "cover",
+          position: "centre"
+        })
+        .webp({ quality: THUMB_QUALITY })
+        .toFile(outThumb);
+
+      const compressedBytes = fs.statSync(outFull).size;
+      const thumbBytes      = fs.statSync(outThumb).size;
+
+      // ── Step 3: Cloudinary pe full image upload ───────────────────────
+      const fullResult = await cloudinary.uploader.upload(outFull, {
+        resource_type: "image",
+        folder:        folder
+      });
+
+      // ── Step 4: Cloudinary pe thumb upload ───────────────────────────
+      const thumbResult = await cloudinary.uploader.upload(outThumb, {
+        resource_type: "image",
+        folder:        "callx/thumb"
+      });
+
+      res.json({
+        image_url:        fullResult.secure_url,
+        thumb_url:        thumbResult.secure_url,
+        compressed_bytes: compressedBytes,
+        thumb_bytes:      thumbBytes
+      });
+
+    } catch (err) {
+      console.error("[compress/image] failed:", err.message);
+      res.status(500).json({ error: err.message });
+    } finally {
+      try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (_) {}
+      try { if (fs.existsSync(outFull))   fs.unlinkSync(outFull);   } catch (_) {}
+      try { if (fs.existsSync(outThumb))  fs.unlinkSync(outThumb);  } catch (_) {}
+    }
+  });
+
+  console.log("[OK] /compress/image endpoint ready");
 })();
 
 // ══════════════════════════════════════════════════════════════════════════════
