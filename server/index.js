@@ -821,7 +821,8 @@ app.post("/notify/reel", async (req, res) => {
 //   toUid          — receiver UID (required)
 //   fromUid        — sender UID
 //   fromName       — sender display name
-//   fromPhoto      — sender avatar URL
+//   fromHandle     — sender @handle (optional — server x/users se auto-fetch karta hai)
+//   fromPhoto      — sender avatar URL (optional — server users/ se auto-fetch karta hai)
 //   type           — x_notif_type value (required)
 //   tweetId        — target tweet ID (like/retweet/reply/mention/quote)
 //   conversationId — DM conversation ID
@@ -847,6 +848,7 @@ app.post("/notify/x", async (req, res) => {
 
   const {
     toUid, fromUid, fromName, fromPhoto,
+    fromHandle     = "",
     type,
     tweetId        = "",
     conversationId = "",
@@ -877,11 +879,18 @@ app.post("/notify/x", async (req, res) => {
 
     // Sender photo fallback — Firebase se fetch karo agar nahi mila
     let senderPhoto = String(fromPhoto || "");
-    if (!senderPhoto && fromUid) {
+    let senderHandle = String(fromHandle || "");
+    if (fromUid && (!senderPhoto || !senderHandle)) {
       try {
         const fSnap = await db.ref("users/" + fromUid).once("value");
         const fVal  = fSnap.val() || {};
-        senderPhoto = String(fVal.thumbUrl || fVal.photoUrl || "");
+        if (!senderPhoto)  senderPhoto  = String(fVal.thumbUrl || fVal.photoUrl || "");
+        // x/users se handle fetch karo agar nahi mila
+        if (!senderHandle) {
+          const xSnap = await db.ref("x/users/" + fromUid).once("value");
+          const xVal  = xSnap.val() || {};
+          senderHandle = String(xVal.handle || xVal.username || "");
+        }
       } catch (_) {}
     }
 
@@ -895,6 +904,7 @@ app.post("/notify/x", async (req, res) => {
         x_notif_type:   String(type),
         fromUid:        String(fromUid        || ""),
         fromName:       String(fromName        || ""),
+        fromHandle:     senderHandle,
         fromPhoto:      senderPhoto,
         tweetId:        String(tweetId        || ""),
         conversationId: String(conversationId || ""),
@@ -909,6 +919,31 @@ app.post("/notify/x", async (req, res) => {
       },
       android: { priority: "high", ttl: ttlMs }
     });
+
+    // Firebase DB me bhi save karo — XNotificationWorker background polling ke liye
+    // x/notifications/{toUid}/{pushKey} — read: false, notified: false
+    try {
+      await db.ref("x/notifications/" + toUid).push({
+        type:           String(type),
+        fromUid:        String(fromUid        || ""),
+        fromName:       String(fromName        || ""),
+        fromHandle:     senderHandle,
+        fromPhotoUrl:   senderPhoto,
+        tweetId:        String(tweetId        || ""),
+        conversationId: String(conversationId || ""),
+        otherUid:       String(otherUid       || ""),
+        otherHandle:    String(otherHandle    || ""),
+        otherPhotoUrl:  String(otherPhoto     || ""),
+        preview:        String(preview        || ""),
+        pollQuestion:   String(pollQuestion   || ""),
+        listName:       String(listName       || ""),
+        spaceId:        String(spaceId        || ""),
+        spaceTitle:     String(spaceTitle     || ""),
+        read:           false,
+        notified:       false,
+        timestamp:      Date.now()
+      });
+    } catch (_) {} // DB save fail hone se FCM response affect na ho
 
     res.json({ ok: true, id: r });
   } catch (e) {
