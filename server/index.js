@@ -953,6 +953,117 @@ app.post("/notify/x", async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// POST /notify/youtube
+// YouTube notification — background/killed state safe via FCM + Firebase DB save
+//
+// Body keys:
+//   toUid        — receiver UID (required)
+//   fromUid      — sender / channel UID
+//   fromName     — channel / commenter display name
+//   fromPhoto    — avatar URL (optional — server youtube/channels/ se auto-fetch)
+//   type         — yt_notif_type value (required)
+//   videoId      — target video ID
+//   videoTitle   — video title
+//   thumbnailUrl — video thumbnail URL
+//   commentText  — comment / reply preview text
+//   likeCount    — like_milestone ke liye
+//
+// Android: CallxMessagingService → YouTubeFCMNotificationHandler.handle()
+// ══════════════════════════════════════════════════════════════════════════════
+const VALID_YT_TYPES = new Set([
+  "new_video", "comment", "reply", "subscribe", "live", "like_milestone"
+]);
+
+app.post("/notify/youtube", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  const {
+    toUid, fromUid, fromName, fromPhoto,
+    type,
+    videoId        = "",
+    videoTitle     = "",
+    thumbnailUrl   = "",
+    commentText    = "",
+    likeCount      = ""
+  } = req.body || {};
+
+  if (!toUid) return res.status(400).json({ error: "toUid required" });
+  if (!type)  return res.status(400).json({ error: "type required" });
+  if (!VALID_YT_TYPES.has(type))
+    return res.status(400).json({ error: "invalid yt_notif_type: " + type });
+
+  if (toUid === fromUid) return res.json({ ok: true, dropped: "self" });
+
+  try {
+    const db   = admin.database();
+    const snap = await db.ref("users/" + toUid).once("value");
+    const user = snap.val() || {};
+    if (!user.fcmToken)
+      return res.status(404).json({ error: "no token" });
+
+    // Sender photo fallback — youtube/channels/ se fetch karo
+    let senderPhoto = String(fromPhoto || "");
+    if (fromUid && !senderPhoto) {
+      try {
+        const chSnap = await db.ref("youtube/channels/" + fromUid).once("value");
+        const chVal  = chSnap.val() || {};
+        senderPhoto = String(chVal.thumbUrl || chVal.photoUrl || chVal.avatarUrl || "");
+        // Fallback to main users/
+        if (!senderPhoto) {
+          const uSnap = await db.ref("users/" + fromUid).once("value");
+          const uVal  = uSnap.val() || {};
+          senderPhoto = String(uVal.thumbUrl || uVal.photoUrl || "");
+        }
+      } catch (_) {}
+    }
+
+    // TTL: new_video / live / comment = urgent, rest = 6h
+    const urgentYt = new Set(["new_video", "live", "comment", "reply"]);
+    const ttlMs = urgentYt.has(type) ? 60000 : 6 * 60 * 60 * 1000;
+
+    const r = await admin.messaging().send({
+      token: user.fcmToken,
+      data: {
+        yt_notif_type:  String(type),
+        fromUid:        String(fromUid       || ""),
+        fromName:       String(fromName      || ""),
+        fromPhoto:      senderPhoto,
+        videoId:        String(videoId       || ""),
+        videoTitle:     String(videoTitle    || ""),
+        thumbnailUrl:   String(thumbnailUrl  || ""),
+        commentText:    String(commentText   || ""),
+        likeCount:      String(likeCount     || "")
+      },
+      android: { priority: "high", ttl: ttlMs }
+    });
+
+    // Firebase DB me bhi save — YouTubeNotificationWorker background polling ke liye
+    try {
+      await db.ref("youtube/notifications/" + toUid).push({
+        type:         String(type),
+        fromUid:      String(fromUid       || ""),
+        fromName:     String(fromName      || ""),
+        fromPhotoUrl: senderPhoto,
+        videoId:      String(videoId       || ""),
+        videoTitle:   String(videoTitle    || ""),
+        thumbnailUrl: String(thumbnailUrl  || ""),
+        commentText:  String(commentText   || ""),
+        likeCount:    String(likeCount     || ""),
+        notified:     false,
+        read:         false,
+        timestamp:    Date.now()
+      });
+    } catch (_) {}
+
+    res.json({ ok: true, id: r });
+  } catch (e) {
+    console.error("youtube notify err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Notify group (production-grade fanout v2)
 // ══════════════════════════════════════════════════════════════════════════════
 app.post("/notify/group", async (req, res) => {
