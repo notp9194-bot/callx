@@ -54,7 +54,7 @@ if (!cloudReady) console.warn("[WARN] CLOUDINARY_API_KEY/SECRET missing");
 // ══════════════════════════════════════════════════════════════════════════════
 app.get("/", (req, res) => res.json({
   ok: true,
-  service: "callx-server v3",
+  service: "callx-server v4",
   firebaseReady,
   cloudReady,
   cloudName: CLOUD_NAME
@@ -1080,12 +1080,21 @@ app.post("/group/markRead", async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Notify status (fanout to all contacts of poster) — optimized v2
+// Notify status (fanout to all contacts of poster) — rich payload v3
+// Sends: fromPhoto, statusType, text, mediaUrl so receiver can show
+// BigPicture notification even in killed state.
 // ══════════════════════════════════════════════════════════════════════════════
 app.post("/notify/status", async (req, res) => {
   if (!firebaseReady)
     return res.status(503).json({ error: "Firebase not configured" });
-  const { fromUid, fromName } = req.body || {};
+
+  const {
+    fromUid, fromName,
+    fromPhoto  = "",
+    statusType = "text",
+    text       = "",
+    mediaUrl   = ""
+  } = req.body || {};
   if (!fromUid) return res.status(400).json({ error: "fromUid required" });
 
   try {
@@ -1094,7 +1103,17 @@ app.post("/notify/status", async (req, res) => {
     const uids  = Object.keys(cSnap.val() || {});
     if (!uids.length) return res.json({ ok: true, sent: 0 });
 
-    // Batch fetch all user tokens in ONE Promise.all
+    // Fetch sender photo fallback
+    let senderPhoto = String(fromPhoto || "");
+    if (!senderPhoto) {
+      try {
+        const fSnap = await db.ref("users/" + fromUid).once("value");
+        const fVal  = fSnap.val() || {};
+        senderPhoto = String(fVal.thumbUrl || fVal.photoUrl || "");
+      } catch (_) {}
+    }
+
+    // Batch fetch all user tokens
     const userSnaps = await Promise.all(
       uids.map(uid => db.ref("users/" + uid).once("value"))
     );
@@ -1108,10 +1127,13 @@ app.post("/notify/status", async (req, res) => {
         await admin.messaging().send({
           token: tk,
           data: {
-            type:     "status",
-            fromUid:  String(fromUid),
-            fromName: String(fromName || "Friend"),
-            text:     "Naya status post kiya"
+            type:       "status",
+            fromUid:    String(fromUid),
+            fromName:   String(fromName  || "Friend"),
+            fromPhoto:  senderPhoto,
+            statusType: String(statusType),
+            text:       String(text),
+            mediaUrl:   String(mediaUrl)
           },
           android: { priority: "high" }
         });
@@ -1123,6 +1145,177 @@ app.post("/notify/status", async (req, res) => {
 
     res.json({ ok: true, sent });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Notify status reaction — POST /notify/status_reaction
+// Called by PushNotify.notifyStatusReaction()
+// Payload: toUid, fromUid, fromName, fromPhoto, reaction, ownerUid
+// Android: CallxMessagingService → handleStatusReaction()
+// ══════════════════════════════════════════════════════════════════════════════
+app.post("/notify/status_reaction", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  const {
+    toUid, fromUid, fromName,
+    fromPhoto = "",
+    reaction  = "❤️",
+    ownerUid  = ""
+  } = req.body || {};
+  if (!toUid) return res.status(400).json({ error: "toUid required" });
+  if (toUid === fromUid) return res.json({ ok: true, dropped: "self" });
+
+  try {
+    const db   = admin.database();
+    const snap = await db.ref("users/" + toUid).once("value");
+    const user = snap.val() || {};
+    if (!user.fcmToken) return res.status(404).json({ error: "no token" });
+
+    let senderPhoto = String(fromPhoto || "");
+    if (!senderPhoto && fromUid) {
+      try {
+        const fSnap = await db.ref("users/" + fromUid).once("value");
+        const fVal  = fSnap.val() || {};
+        senderPhoto = String(fVal.thumbUrl || fVal.photoUrl || "");
+      } catch (_) {}
+    }
+
+    const r = await admin.messaging().send({
+      token: user.fcmToken,
+      data: {
+        type:      "status_reaction",
+        fromUid:   String(fromUid   || ""),
+        fromName:  String(fromName  || ""),
+        fromPhoto: senderPhoto,
+        reaction:  String(reaction),
+        ownerUid:  String(ownerUid)
+      },
+      android: { priority: "high", ttl: 6 * 60 * 60 * 1000 }
+    });
+    res.json({ ok: true, id: r });
+  } catch (e) {
+    console.error("status_reaction notify err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Notify contact join — POST /notify/contact_join
+// Called by PushNotify.notifyContactsOfNewUser()
+// Fanout: notifies all contacts of newUid that they joined CallX
+// Payload: newUid, newName, newPhoto
+// Android: type="contact_join" → CallxMessagingService
+// ══════════════════════════════════════════════════════════════════════════════
+app.post("/notify/contact_join", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  const { newUid, newName, newPhoto = "" } = req.body || {};
+  if (!newUid) return res.status(400).json({ error: "newUid required" });
+
+  try {
+    const db    = admin.database();
+    const cSnap = await db.ref("contacts/" + newUid).once("value");
+    const uids  = Object.keys(cSnap.val() || {});
+    if (!uids.length) return res.json({ ok: true, sent: 0 });
+
+    let senderPhoto = String(newPhoto || "");
+    if (!senderPhoto) {
+      try {
+        const fSnap = await db.ref("users/" + newUid).once("value");
+        const fVal  = fSnap.val() || {};
+        senderPhoto = String(fVal.thumbUrl || fVal.photoUrl || "");
+      } catch (_) {}
+    }
+
+    const userSnaps = await Promise.all(
+      uids.map(uid => db.ref("users/" + uid).once("value"))
+    );
+
+    let sent = 0;
+    await Promise.all(userSnaps.map(async (snap) => {
+      const u  = snap.val() || {};
+      const tk = u.fcmToken;
+      if (!tk) return;
+      try {
+        await admin.messaging().send({
+          token: tk,
+          data: {
+            type:     "contact_join",
+            fromUid:  String(newUid),
+            fromName: String(newName  || ""),
+            fromPhoto: senderPhoto
+          },
+          android: { priority: "normal", ttl: 24 * 60 * 60 * 1000 }
+        });
+        sent++;
+      } catch (e) {
+        console.warn("contact_join send fail:", e.message);
+      }
+    }));
+
+    res.json({ ok: true, sent });
+  } catch (e) {
+    console.error("contact_join notify err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Notify group member joined — POST /notify/group_join
+// Called by PushNotify.notifyGroupMemberJoined()
+// Fanout: notifies all existing group members that someone new joined
+// Payload: groupId, groupName, newMemberName
+// Android: type="group_member_joined" → CallxMessagingService
+// ══════════════════════════════════════════════════════════════════════════════
+app.post("/notify/group_join", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  const { groupId, groupName = "Group", newMemberName = "" } = req.body || {};
+  if (!groupId) return res.status(400).json({ error: "groupId required" });
+
+  try {
+    const db    = admin.database();
+    const gSnap = await db.ref("groups/" + groupId).once("value");
+    const g     = gSnap.val();
+    if (!g) return res.status(404).json({ error: "group not found" });
+
+    const memberUids = Object.keys(g.members || {});
+    if (!memberUids.length) return res.json({ ok: true, sent: 0 });
+
+    const userSnaps = await Promise.all(
+      memberUids.map(uid => db.ref("users/" + uid).once("value"))
+    );
+
+    let sent = 0;
+    await Promise.all(userSnaps.map(async (snap) => {
+      const u  = snap.val() || {};
+      const tk = u.fcmToken;
+      if (!tk) return;
+      try {
+        await admin.messaging().send({
+          token: tk,
+          data: {
+            type:          "group_member_joined",
+            groupId:       String(groupId),
+            groupName:     String(groupName),
+            newMemberName: String(newMemberName)
+          },
+          android: { priority: "normal", ttl: 6 * 60 * 60 * 1000 }
+        });
+        sent++;
+      } catch (e) {
+        console.warn("group_join send fail:", e.message);
+      }
+    }));
+
+    res.json({ ok: true, sent });
+  } catch (e) {
+    console.error("group_join notify err:", e.message);
     res.status(500).json({ error: e.message });
   }
 });
