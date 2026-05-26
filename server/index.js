@@ -813,6 +813,111 @@ app.post("/notify/reel", async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Notify X feature — like, retweet, reply, mention, quote, follow, dm,
+//                    poll_ended, list_added, space_started, close_friend_post
+// POST /notify/x
+//
+// Body keys:
+//   toUid          — receiver UID (required)
+//   fromUid        — sender UID
+//   fromName       — sender display name
+//   fromPhoto      — sender avatar URL
+//   type           — x_notif_type value (required)
+//   tweetId        — target tweet ID (like/retweet/reply/mention/quote)
+//   conversationId — DM conversation ID
+//   otherUid       — DM other user UID
+//   otherHandle    — DM other user handle
+//   otherPhoto     — DM other user avatar URL
+//   preview        — DM message preview text
+//   pollQuestion   — poll_ended ke liye poll question
+//   listName       — list_added ke liye list name
+//   spaceId        — space_started ke liye space ID
+//   spaceTitle     — space_started ke liye space title
+//
+// Android client: XFCMNotificationHandler.handle() routes by "x_notif_type" key
+// ══════════════════════════════════════════════════════════════════════════════
+const VALID_X_TYPES = new Set([
+  "like", "retweet", "reply", "mention", "quote", "follow", "dm",
+  "poll_ended", "list_added", "space_started", "close_friend_post"
+]);
+
+app.post("/notify/x", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  const {
+    toUid, fromUid, fromName, fromPhoto,
+    type,
+    tweetId        = "",
+    conversationId = "",
+    otherUid       = "",
+    otherHandle    = "",
+    otherPhoto     = "",
+    preview        = "",
+    pollQuestion   = "",
+    listName       = "",
+    spaceId        = "",
+    spaceTitle     = ""
+  } = req.body || {};
+
+  if (!toUid) return res.status(400).json({ error: "toUid required" });
+  if (!type)  return res.status(400).json({ error: "type required" });
+  if (!VALID_X_TYPES.has(type))
+    return res.status(400).json({ error: "invalid x_notif_type: " + type });
+
+  // Self-notification drop
+  if (toUid === fromUid) return res.json({ ok: true, dropped: "self" });
+
+  try {
+    const db   = admin.database();
+    const snap = await db.ref("users/" + toUid).once("value");
+    const user = snap.val() || {};
+    if (!user.fcmToken)
+      return res.status(404).json({ error: "no token" });
+
+    // Sender photo fallback — Firebase se fetch karo agar nahi mila
+    let senderPhoto = String(fromPhoto || "");
+    if (!senderPhoto && fromUid) {
+      try {
+        const fSnap = await db.ref("users/" + fromUid).once("value");
+        const fVal  = fSnap.val() || {};
+        senderPhoto = String(fVal.thumbUrl || fVal.photoUrl || "");
+      } catch (_) {}
+    }
+
+    // TTL: DM + social types = urgent (60s), baaki = 6 hours
+    const urgentTypes = new Set(["dm", "reply", "mention"]);
+    const ttlMs = urgentTypes.has(type) ? 60000 : 6 * 60 * 60 * 1000;
+
+    const r = await admin.messaging().send({
+      token: user.fcmToken,
+      data: {
+        x_notif_type:   String(type),
+        fromUid:        String(fromUid        || ""),
+        fromName:       String(fromName        || ""),
+        fromPhoto:      senderPhoto,
+        tweetId:        String(tweetId        || ""),
+        conversationId: String(conversationId || ""),
+        otherUid:       String(otherUid       || ""),
+        otherHandle:    String(otherHandle    || ""),
+        otherPhoto:     String(otherPhoto     || ""),
+        preview:        String(preview        || ""),
+        pollQuestion:   String(pollQuestion   || ""),
+        listName:       String(listName       || ""),
+        spaceId:        String(spaceId        || ""),
+        spaceTitle:     String(spaceTitle     || "")
+      },
+      android: { priority: "high", ttl: ttlMs }
+    });
+
+    res.json({ ok: true, id: r });
+  } catch (e) {
+    console.error("x notify err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Notify group (production-grade fanout v2)
 // ══════════════════════════════════════════════════════════════════════════════
 app.post("/notify/group", async (req, res) => {
