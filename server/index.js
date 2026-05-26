@@ -895,8 +895,8 @@ app.post("/notify/x", async (req, res) => {
         }
       } catch (_) {}
     }
-    const urgentTypes = new Set(["dm", "reply", "mention"]);
-    const ttlMs = urgentTypes.has(type) ? 60000 : 6 * 60 * 60 * 1000;
+    // TTL: 4h for all X notifications (background/killed safe)
+    const ttlMs = 4 * 60 * 60 * 1000;
 
     const r = await admin.messaging().send({
       token: user.fcmToken,
@@ -1018,9 +1018,9 @@ app.post("/notify/youtube", async (req, res) => {
       } catch (_) {}
     }
 
-    // TTL: new_video / live / comment = urgent, rest = 6h
-    const urgentYt = new Set(["new_video", "live", "comment", "reply"]);
-    const ttlMs = urgentYt.has(type) ? 60000 : 6 * 60 * 60 * 1000;
+    // TTL: all YouTube notifications = 4h (background/killed safe)
+    // 60s was too short — Doze mode pe expire ho jaata tha before delivery
+    const ttlMs = 4 * 60 * 60 * 1000;
 
     const r = await admin.messaging().send({
       token: user.fcmToken,
