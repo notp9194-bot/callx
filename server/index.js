@@ -877,24 +877,24 @@ app.post("/notify/x", async (req, res) => {
     if (!user.fcmToken)
       return res.status(404).json({ error: "no token" });
 
-    // Sender photo fallback — Firebase se fetch karo agar nahi mila
-    let senderPhoto = String(fromPhoto || "");
+    // Sender photo + handle fallback — Firebase se fetch karo agar nahi mila
+    let senderPhoto  = String(fromPhoto  || "");
     let senderHandle = String(fromHandle || "");
     if (fromUid && (!senderPhoto || !senderHandle)) {
       try {
-        const fSnap = await db.ref("users/" + fromUid).once("value");
-        const fVal  = fSnap.val() || {};
-        if (!senderPhoto)  senderPhoto  = String(fVal.thumbUrl || fVal.photoUrl || "");
-        // x/users se handle fetch karo agar nahi mila
-        if (!senderHandle) {
-          const xSnap = await db.ref("x/users/" + fromUid).once("value");
-          const xVal  = xSnap.val() || {};
-          senderHandle = String(xVal.handle || xVal.username || "");
+        // x/users me X-specific profile hai — photo aur handle dono yahan se lo
+        const xSnap = await db.ref("x/users/" + fromUid).once("value");
+        const xVal  = xSnap.val() || {};
+        if (!senderPhoto)  senderPhoto  = String(xVal.thumbUrl || xVal.photoUrl || "");
+        if (!senderHandle) senderHandle = String(xVal.handle   || xVal.username  || "");
+        // x/users me photo nahi mila to main users/ se try karo
+        if (!senderPhoto) {
+          const fSnap = await db.ref("users/" + fromUid).once("value");
+          const fVal  = fSnap.val() || {};
+          senderPhoto = String(fVal.thumbUrl || fVal.photoUrl || "");
         }
       } catch (_) {}
     }
-
-    // TTL: DM + social types = urgent (60s), baaki = 6 hours
     const urgentTypes = new Set(["dm", "reply", "mention"]);
     const ttlMs = urgentTypes.has(type) ? 60000 : 6 * 60 * 60 * 1000;
 
