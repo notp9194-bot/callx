@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Bubble Pop!</title>
+  <style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-user-select:none; user-select:none; }
+:root { --bg:#0d0d1a; --surface:#1a1a2e; --accent:#e94560; --gold:#f5a623; --text:#eaeaea; --text-dim:#8888aa; --radius:16px; }
+html,body { width:100%; height:100%; overflow:hidden; background:var(--bg); font-family:'Segoe UI',system-ui,-apple-system,sans-serif; color:var(--text); touch-action:none; }
+#game-container { position:relative; width:100vw; height:100vh; overflow:hidden; }
+.screen { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; opacity:0; pointer-events:none; transition:opacity 0.3s ease; z-index:10; }
+.screen.active { opacity:1; pointer-events:all; }
+#start-screen { background:radial-gradient(ellipse at 50% 0%,#1a1a3e 0%,var(--bg) 70%); gap:16px; }
+.logo { font-size:72px; line-height:1; animation:float 3s ease-in-out infinite; filter:drop-shadow(0 0 20px rgba(233,69,96,0.6)); }
+@keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+h1 { font-size:36px; font-weight:800; letter-spacing:-1px; background:linear-gradient(135deg,#fff 30%,var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.subtitle { color:var(--text-dim); font-size:15px; }
+.instructions { background:var(--surface); border-radius:var(--radius); padding:16px 20px; width:100%; max-width:320px; display:flex; flex-direction:column; gap:10px; border:1px solid rgba(255,255,255,0.06); }
+.inst-item { font-size:14px; color:var(--text-dim); }
+#best-score-start { font-size:13px; color:var(--gold); min-height:18px; }
+.btn-primary { width:100%; max-width:320px; padding:16px; border:none; border-radius:50px; background:linear-gradient(135deg,var(--accent),#c03050); color:#fff; font-size:18px; font-weight:700; cursor:pointer; transition:transform 0.1s,box-shadow 0.1s; box-shadow:0 4px 20px rgba(233,69,96,0.4); }
+.btn-primary:active { transform:scale(0.96); }
+.btn-secondary { width:100%; max-width:320px; padding:14px; border:1px solid rgba(255,255,255,0.15); border-radius:50px; background:transparent; color:var(--text-dim); font-size:16px; font-weight:600; cursor:pointer; }
+.btn-secondary:active { border-color:rgba(255,255,255,0.4); color:#fff; }
+#game-screen { padding:0; justify-content:flex-start; background:var(--bg); z-index:5; }
+#hud { width:100%; display:flex; align-items:center; justify-content:space-between; padding:12px 20px 8px; background:rgba(26,26,46,0.9); backdrop-filter:blur(4px); z-index:20; border-bottom:1px solid rgba(255,255,255,0.05); }
+.hud-item { display:flex; flex-direction:column; align-items:flex-start; min-width:60px; }
+.hud-item.center { align-items:center; }
+.hud-item.right { align-items:flex-end; }
+.hud-label { font-size:10px; letter-spacing:1px; color:var(--text-dim); font-weight:600; }
+#score,#best { font-size:26px; font-weight:800; letter-spacing:-1px; color:#fff; line-height:1; }
+#lives-display { display:flex; gap:4px; font-size:18px; }
+#lives-display .life { transition:opacity 0.3s,transform 0.3s; }
+#lives-display .life.lost { opacity:0.15; transform:scale(0.8); }
+#combo-display { position:absolute; top:70px; left:50%; transform:translateX(-50%); font-size:14px; font-weight:700; color:var(--gold); letter-spacing:1px; z-index:15; pointer-events:none; opacity:0; transition:opacity 0.3s; }
+#combo-display.visible { opacity:1; }
+#game-canvas { display:block; width:100%; flex:1; }
+#gameover-screen { background:radial-gradient(ellipse at 50% 0%,#2a0a1a 0%,var(--bg) 70%); gap:14px; }
+h2 { font-size:32px; font-weight:800; }
+.result-box { width:100%; max-width:320px; background:var(--surface); border-radius:var(--radius); overflow:hidden; border:1px solid rgba(255,255,255,0.06); }
+.result-row { display:flex; justify-content:space-between; align-items:center; padding:14px 20px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:15px; color:var(--text-dim); }
+.result-row:last-child { border-bottom:none; }
+.result-row span:last-child { font-weight:700; color:#fff; font-size:18px; }
+.result-row.highlight { background:rgba(245,166,35,0.08); }
+.result-row.highlight span:last-child { color:var(--gold); }
+#new-best-badge { background:linear-gradient(135deg,var(--gold),#e08000); color:#000; font-weight:800; font-size:14px; padding:8px 20px; border-radius:50px; }
+.hidden { display:none !important; }
+.float-text { position:absolute; pointer-events:none; font-weight:800; font-size:20px; color:#fff; text-shadow:0 0 8px rgba(0,0,0,0.6); z-index:30; animation:floatUp 0.9s ease-out forwards; white-space:nowrap; }
+@keyframes floatUp { 0%{opacity:1;transform:translateY(0) scale(1)} 100%{opacity:0;transform:translateY(-60px) scale(1.3)} }
+@keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <div id="start-screen" class="screen active">
+      <div class="logo">🫧</div>
+      <h1>Bubble Pop!</h1>
+      <p class="subtitle">Tap bubbles before they vanish!</p>
+      <div class="instructions">
+        <div class="inst-item">🎯 Tap bubbles to score points</div>
+        <div class="inst-item">⏱️ Big bubbles = less points</div>
+        <div class="inst-item">💀 Miss 3 bubbles = Game Over</div>
+      </div>
+      <button id="start-btn" class="btn-primary">Play Now</button>
+      <div id="best-score-start"></div>
+    </div>
+    <div id="game-screen" class="screen">
+      <div id="hud">
+        <div class="hud-item"><span class="hud-label">SCORE</span><span id="score">0</span></div>
+        <div class="hud-item center"><div id="lives-display"><span class="life">❤️</span><span class="life">❤️</span><span class="life">❤️</span></div></div>
+        <div class="hud-item right"><span class="hud-label">BEST</span><span id="best">0</span></div>
+      </div>
+      <div id="combo-display"></div>
+      <canvas id="game-canvas"></canvas>
+    </div>
+    <div id="gameover-screen" class="screen">
+      <div class="logo">💥</div>
+      <h2>Game Over!</h2>
+      <div class="result-box">
+        <div class="result-row"><span>Your Score</span><span id="final-score">0</span></div>
+        <div class="result-row highlight"><span>Best Score</span><span id="final-best">0</span></div>
+        <div class="result-row"><span>Bubbles Popped</span><span id="final-popped">0</span></div>
+        <div class="result-row"><span>Highest Combo</span><span id="final-combo">0</span></div>
+      </div>
+      <div id="new-best-badge" class="hidden">🏆 New Best Score!</div>
+      <button id="restart-btn" class="btn-primary">Play Again</button>
+      <button id="menu-btn" class="btn-secondary">Menu</button>
+    </div>
+  </div>
+  <script>
+'use strict';
+const state={score:0,best:0,lives:3,combo:0,maxCombo:0,popped:0,running:false,animFrame:null,spawnTimer:null,lastTime:0,difficulty:1,diffTimer:0};
+const bubbles=[];
+const screens={start:document.getElementById('start-screen'),game:document.getElementById('game-screen'),over:document.getElementById('gameover-screen')};
+const canvas=document.getElementById('game-canvas');
+const ctx=canvas.getContext('2d');
+const scoreEl=document.getElementById('score');
+const bestEl=document.getElementById('best');
+const comboEl=document.getElementById('combo-display');
+const livesEl=document.getElementById('lives-display');
+const COLORS=[{fill:'rgba(233,69,96,0.85)',glow:'rgba(233,69,96,0.5)',pts:30},{fill:'rgba(78,205,196,0.85)',glow:'rgba(78,205,196,0.5)',pts:20},{fill:'rgba(245,166,35,0.85)',glow:'rgba(245,166,35,0.5)',pts:25},{fill:'rgba(150,100,255,0.85)',glow:'rgba(150,100,255,0.5)',pts:35},{fill:'rgba(255,255,255,0.75)',glow:'rgba(255,255,255,0.3)',pts:15}];
+function resizeCanvas(){const h=document.getElementById('hud').offsetHeight;canvas.width=window.innerWidth;canvas.height=window.innerHeight-h;}
+window.addEventListener('resize',resizeCanvas);
+function showScreen(n){Object.keys(screens).forEach(k=>screens[k].classList.toggle('active',k===n));}
+function loadBest(){const v=parseInt(localStorage.getItem('bubblePop_best')||'0',10);state.best=isNaN(v)?0:v;}
+function saveBest(){localStorage.setItem('bubblePop_best',String(state.best));}
+function updateHUD(){scoreEl.textContent=state.score;bestEl.textContent=state.best;livesEl.querySelectorAll('.life').forEach((h,i)=>h.classList.toggle('lost',i>=state.lives));}
+function updateCombo(){if(state.combo>=2){comboEl.textContent=state.combo+'x COMBO!';comboEl.classList.add('visible');}else{comboEl.classList.remove('visible');}}
+function spawnBubble(){const minR=22,maxR=52,r=Math.random()*(maxR-minR)+minR,c=COLORS[Math.floor(Math.random()*COLORS.length)],life=Math.max(1200,2800-(state.difficulty-1)*200);bubbles.push({x:Math.random()*(canvas.width-r*2)+r,y:Math.random()*(canvas.height-r*2)+r,r,color:c.fill,glow:c.glow,points:Math.round(c.pts*(maxR/r)*0.6),born:performance.now(),life,alpha:0,popping:false,popProgress:0,vx:(Math.random()-0.5)*0.4,vy:(Math.random()-0.5)*0.4});}
+function scheduleSpawn(){if(!state.running)return;const mn=Math.max(300,900-(state.difficulty-1)*60),mx=Math.max(600,1600-(state.difficulty-1)*100);state.spawnTimer=setTimeout(()=>{if(bubbles.filter(b=>!b.popping).length<Math.min(4+state.difficulty,10))spawnBubble();scheduleSpawn();},Math.random()*(mx-mn)+mn);}
+function drawBubble(b,now){const p=Math.min((now-b.born)/b.life,1);if(p<0.08)b.alpha=p/0.08;else if(p>0.70)b.alpha=1-(p-0.70)/0.30;else b.alpha=1;if(b.popping){b.popProgress=Math.min(b.popProgress+0.08,1);b.alpha=1-b.popProgress;ctx.save();ctx.globalAlpha=b.alpha;ctx.translate(b.x,b.y);ctx.scale(1+b.popProgress*0.6,1+b.popProgress*0.6);drawCircle(b,0,0);ctx.restore();return;}ctx.save();ctx.globalAlpha=b.alpha;drawCircle(b,b.x,b.y);ctx.restore();const tl=1-p;if(tl>0){ctx.save();ctx.globalAlpha=b.alpha*0.5;ctx.strokeStyle=b.glow;ctx.lineWidth=3;ctx.beginPath();ctx.arc(b.x,b.y,b.r+4,-Math.PI/2,-Math.PI/2+Math.PI*2*tl);ctx.stroke();ctx.restore();}}
+function drawCircle(b,cx,cy){ctx.shadowColor=b.glow;ctx.shadowBlur=18;const g=ctx.createRadialGradient(cx-b.r*0.3,cy-b.r*0.3,b.r*0.1,cx,cy,b.r);g.addColorStop(0,'rgba(255,255,255,0.4)');g.addColorStop(0.5,b.color);g.addColorStop(1,b.color.replace('0.85','0.3').replace('0.75','0.2'));ctx.beginPath();ctx.arc(cx,cy,b.r,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();ctx.shadowBlur=0;ctx.beginPath();ctx.arc(cx-b.r*0.3,cy-b.r*0.3,b.r*0.22,0,Math.PI*2);ctx.fillStyle='rgba(255,255,255,0.55)';ctx.fill();}
+function drawBg(){ctx.save();ctx.strokeStyle='rgba(255,255,255,0.025)';ctx.lineWidth=1;for(let x=0;x<canvas.width;x+=48){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();}for(let y=0;y<canvas.height;y+=48){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();}ctx.restore();}
+function gameLoop(now){if(!state.running)return;state.animFrame=requestAnimationFrame(gameLoop);const dt=now-(state.lastTime||now);state.lastTime=now;state.diffTimer+=dt;if(state.diffTimer>8000){state.diffTimer=0;state.difficulty=Math.min(state.difficulty+1,12);}ctx.clearRect(0,0,canvas.width,canvas.height);drawBg();const exp=[];for(let i=bubbles.length-1;i>=0;i--){const b=bubbles[i];if(!b.popping){b.x+=b.vx;b.y+=b.vy;if(b.x-b.r<0||b.x+b.r>canvas.width)b.vx*=-1;if(b.y-b.r<0||b.y+b.r>canvas.height)b.vy*=-1;}drawBubble(b,now);if(b.popping&&b.popProgress>=1){bubbles.splice(i,1);continue;}if(!b.popping&&now-b.born>=b.life)exp.push(i);}exp.forEach(i=>{bubbles.splice(i,1);loseLife();});}
+function loseLife(){state.lives--;state.combo=0;updateCombo();updateHUD();const gs=document.getElementById('game-screen');gs.style.animation='none';gs.offsetHeight;gs.style.animation='shake 0.3s ease';if(state.lives<=0)setTimeout(endGame,200);}
+function onTap(x,y){if(!state.running)return;const hh=document.getElementById('hud').offsetHeight,cy=y-hh;let hit=false;for(let i=bubbles.length-1;i>=0;i--){const b=bubbles[i];if(b.popping)continue;const dx=b.x-x,dy=b.y-cy;if(Math.sqrt(dx*dx+dy*dy)<=b.r+10){b.popping=true;state.combo++;state.popped++;if(state.combo>state.maxCombo)state.maxCombo=state.combo;const pts=b.points*Math.min(state.combo,8);state.score+=pts;if(state.score>state.best)state.best=state.score;updateHUD();updateCombo();showFloat('+'+pts,x,y,state.combo>=3);hit=true;break;}}if(!hit){state.combo=0;updateCombo();}}
+function showFloat(text,x,y,big){const el=document.createElement('div');el.className='float-text';el.textContent=text;el.style.left=(x-20)+'px';el.style.top=(y-10)+'px';if(big){el.style.fontSize='26px';el.style.color='#f5a623';}document.getElementById('game-container').appendChild(el);setTimeout(()=>el.remove(),900);}
+canvas.addEventListener('touchstart',e=>{e.preventDefault();const t=e.changedTouches[0];onTap(t.clientX,t.clientY);},{passive:false});
+canvas.addEventListener('mousedown',e=>onTap(e.clientX,e.clientY));
+function startGame(){bubbles.length=0;Object.assign(state,{score:0,lives:3,combo:0,maxCombo:0,popped:0,running:true,difficulty:1,diffTimer:0,lastTime:0});resizeCanvas();updateHUD();updateCombo();showScreen('game');setTimeout(()=>{scheduleSpawn();spawnBubble();state.animFrame=requestAnimationFrame(gameLoop);},100);}
+function endGame(){state.running=false;cancelAnimationFrame(state.animFrame);clearTimeout(state.spawnTimer);saveBest();document.getElementById('final-score').textContent=state.score;document.getElementById('final-best').textContent=state.best;document.getElementById('final-popped').textContent=state.popped;document.getElementById('final-combo').textContent=state.maxCombo;document.getElementById('new-best-badge').classList.toggle('hidden',!(state.score>0&&state.score>=state.best));showScreen('over');}
+document.getElementById('start-btn').addEventListener('click',startGame);
+document.getElementById('restart-btn').addEventListener('click',startGame);
+document.getElementById('menu-btn').addEventListener('click',()=>{showScreen('start');document.getElementById('best-score-start').textContent=state.best>0?'Best Score: '+state.best:'';});
+loadBest();
+document.getElementById('best-score-start').textContent=state.best>0?'Best Score: '+state.best:'';
+  </script>
+<script src="https://replit-cdn.com/replit-pill/replit-pill.global.js" data-repl-id="d2daf91a-88e1-4919-9d4f-3e8c8eb986e8"></script></body>
+</html>
