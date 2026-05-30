@@ -4,26 +4,18 @@ const morgan  = require("morgan");
 
 const app = express();
 
-// ✅ STATIC FILES (GAME SERVE)
-app.use(express.static("server"));
+// ✅ CORRECT STATIC PATH
+app.use(express.static(__dirname));
 
-// ✅ BASIC MIDDLEWARES
 app.use(cors());
 app.use(express.json());
 app.use(morgan("dev"));
 
-// ✅ TEST ROUTE
 app.get("/", (req, res) => {
-  res.send("✅ CallX Server Running");
+  res.send("Server running ✅");
 });
 
-// ✅ OPTIONAL: direct game route (backup)
-app.get("/game", (req, res) => {
-  res.sendFile(__dirname + "/server/bubble-pop-game.html");
-});
-
-// ✅ SERVER START
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("🚀 Server running on port " + PORT);
+  console.log("Server running on port " + PORT);
 });
