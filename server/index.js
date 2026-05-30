@@ -1,4 +1,9 @@
 const express = require("express");
+const app = express();
+
+// ⭐ YE LINE ADD KARO
+app.use(express.static("server"));
+const express = require("express");
 const cors    = require("cors");
 const morgan  = require("morgan");
 const crypto  = require("crypto");
