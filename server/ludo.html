@@ -1,636 +1,599 @@
 <!DOCTYPE html>
 <html lang="hi">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>Ludo Game</title>
-
-  <style>
-    *, *::before, *::after {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    :root {
-      --bg: #0a0a12;
-      --accent: #f5c518;
-      --accent2: #e84545;
-      --accent3: #3ae374;
-      --accent4: #4a90e2;
-      --card: #13131f;
-      --text: #f0f0f0;
-      --muted: #555570;
-      --loader-size: 56px;
-    }
-
-    html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: var(--bg);
-      font-family: 'Segoe UI', sans-serif;
-      color: var(--text);
-      touch-action: manipulation;
-    }
-
-    /* ── LOADER SCREEN ── */
-    #loader {
-      position: fixed;
-      inset: 0;
-      z-index: 999;
-      background: var(--bg);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 24px;
-      transition: opacity 0.5s ease, visibility 0.5s ease;
-    }
-
-    #loader.hidden {
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
-    }
-
-    .logo-wrap {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .ludo-icon {
-      width: 90px;
-      height: 90px;
-      position: relative;
-      animation: floatIcon 3s ease-in-out infinite;
-    }
-
-    @keyframes floatIcon {
-      0%, 100% { transform: translateY(0); }
-      50%       { transform: translateY(-8px); }
-    }
-
-    .ludo-icon svg {
-      width: 100%;
-      height: 100%;
-      drop-shadow: 0 0 20px var(--accent);
-      filter: drop-shadow(0 0 18px var(--accent));
-    }
-
-    .logo-title {
-      font-size: 2rem;
-      font-weight: 800;
-      letter-spacing: 4px;
-      text-transform: uppercase;
-      background: linear-gradient(135deg, var(--accent) 0%, #ff9f43 50%, var(--accent2) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .logo-sub {
-      font-size: 0.78rem;
-      color: var(--muted);
-      letter-spacing: 2px;
-      text-transform: uppercase;
-    }
-
-    /* Progress bar */
-    .progress-track {
-      width: min(280px, 80vw);
-      height: 5px;
-      background: #1e1e2e;
-      border-radius: 999px;
-      overflow: hidden;
-    }
-
-    .progress-fill {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, var(--accent), var(--accent2));
-      border-radius: 999px;
-      transition: width 0.3s ease;
-      animation: progressAnim 3s ease forwards;
-    }
-
-    @keyframes progressAnim {
-      0%   { width: 0%; }
-      30%  { width: 40%; }
-      60%  { width: 70%; }
-      85%  { width: 88%; }
-      100% { width: 95%; }
-    }
-
-    .loading-text {
-      font-size: 0.75rem;
-      color: var(--muted);
-      letter-spacing: 1.5px;
-      animation: blink 1.4s ease-in-out infinite;
-    }
-
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.3; }
-    }
-
-    /* ── ERROR SCREEN ── */
-    #error-screen {
-      position: fixed;
-      inset: 0;
-      z-index: 998;
-      background: var(--bg);
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      padding: 24px;
-      text-align: center;
-    }
-
-    #error-screen.visible {
-      display: flex;
-    }
-
-    .error-icon {
-      font-size: 4rem;
-      animation: shake 0.5s ease;
-    }
-
-    @keyframes shake {
-      0%, 100% { transform: translateX(0); }
-      20%       { transform: translateX(-8px); }
-      40%       { transform: translateX(8px); }
-      60%       { transform: translateX(-5px); }
-      80%       { transform: translateX(5px); }
-    }
-
-    .error-title {
-      font-size: 1.3rem;
-      font-weight: 700;
-      color: var(--accent2);
-    }
-
-    .error-msg {
-      font-size: 0.9rem;
-      color: var(--muted);
-      max-width: 320px;
-      line-height: 1.6;
-    }
-
-    .retry-btn {
-      margin-top: 8px;
-      padding: 14px 36px;
-      background: linear-gradient(135deg, var(--accent), #ff9f43);
-      color: #000;
-      font-weight: 800;
-      font-size: 0.9rem;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      border: none;
-      border-radius: 50px;
-      cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
-      box-shadow: 0 6px 24px rgba(245, 197, 24, 0.35);
-    }
-
-    .retry-btn:active {
-      transform: scale(0.95);
-      box-shadow: 0 2px 10px rgba(245, 197, 24, 0.2);
-    }
-
-    /* ── GAME IFRAME ── */
-    #game-wrap {
-      position: fixed;
-      inset: 0;
-      z-index: 1;
-      background: #000;
-    }
-
-    #game-frame {
-      width: 100%;
-      height: 100%;
-      border: none;
-      display: block;
-      background: #000;
-    }
-
-    /* ── TOP BAR (minimal, over game) ── */
-    #top-bar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 100;
-      height: 44px;
-      background: linear-gradient(180deg, rgba(0,0,0,0.75) 0%, transparent 100%);
-      display: flex;
-      align-items: center;
-      padding: 0 14px;
-      gap: 10px;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.4s ease;
-    }
-
-    #top-bar.visible {
-      opacity: 1;
-      pointer-events: all;
-    }
-
-    .back-btn {
-      width: 36px;
-      height: 36px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(255,255,255,0.12);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 50%;
-      cursor: pointer;
-      backdrop-filter: blur(6px);
-      transition: background 0.2s;
-    }
-
-    .back-btn:active {
-      background: rgba(255,255,255,0.25);
-    }
-
-    .back-btn svg {
-      width: 18px;
-      height: 18px;
-      fill: none;
-      stroke: #fff;
-      stroke-width: 2.2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-
-    .bar-title {
-      font-size: 0.82rem;
-      font-weight: 700;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      color: rgba(255,255,255,0.8);
-      flex: 1;
-    }
-
-    /* dot indicator */
-    .net-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent3);
-      box-shadow: 0 0 6px var(--accent3);
-    }
-
-    .net-dot.offline {
-      background: var(--accent2);
-      box-shadow: 0 0 6px var(--accent2);
-    }
-
-    /* ── NO INTERNET TOAST ── */
-    #toast {
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%) translateY(80px);
-      z-index: 500;
-      background: #1e1e2e;
-      border: 1px solid rgba(255,255,255,0.08);
-      color: var(--text);
-      padding: 12px 22px;
-      border-radius: 12px;
-      font-size: 0.82rem;
-      white-space: nowrap;
-      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-    }
-
-    #toast.show {
-      transform: translateX(-50%) translateY(0);
-    }
-
-    /* ── EXIT CONFIRM ── */
-    #exit-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 9999;
-      background: rgba(0,0,0,0.7);
-      backdrop-filter: blur(8px);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-    }
-
-    #exit-overlay.visible {
-      display: flex;
-    }
-
-    .exit-card {
-      background: var(--card);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 20px;
-      padding: 28px 24px;
-      max-width: 320px;
-      width: 100%;
-      text-align: center;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-      animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-
-    @keyframes popIn {
-      from { transform: scale(0.85); opacity: 0; }
-      to   { transform: scale(1);    opacity: 1; }
-    }
-
-    .exit-emoji { font-size: 2.5rem; margin-bottom: 10px; }
-
-    .exit-heading {
-      font-size: 1.1rem;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-
-    .exit-subtext {
-      font-size: 0.82rem;
-      color: var(--muted);
-      line-height: 1.6;
-      margin-bottom: 22px;
-    }
-
-    .exit-actions {
-      display: flex;
-      gap: 10px;
-    }
-
-    .exit-actions button {
-      flex: 1;
-      padding: 13px 0;
-      border-radius: 12px;
-      border: none;
-      font-size: 0.85rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: transform 0.15s ease;
-    }
-
-    .exit-actions button:active { transform: scale(0.95); }
-
-    .btn-stay {
-      background: rgba(255,255,255,0.07);
-      color: var(--text);
-      border: 1px solid rgba(255,255,255,0.1) !important;
-    }
-
-    .btn-exit {
-      background: linear-gradient(135deg, var(--accent2), #ff6b6b);
-      color: #fff;
-    }
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>Ludo King</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--red:#E84545;--blue:#4A90E2;--green:#3AE374;--yellow:#F5C518;--bg:#0d0d1a;--surface:#16162a;--surface2:#1e1e35;--text:#f0f0ff;--muted:#6060a0}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:'Segoe UI',system-ui,sans-serif;color:var(--text);user-select:none;-webkit-user-select:none;touch-action:manipulation}
+#stars{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+.star{position:absolute;width:2px;height:2px;border-radius:50%;background:#fff;animation:twinkle var(--d,3s) ease-in-out infinite var(--delay,0s)}
+@keyframes twinkle{0%,100%{opacity:.1}50%{opacity:.9}}
+.screen{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .4s,visibility .4s}
+.screen.hidden{opacity:0;visibility:hidden;pointer-events:none}
+#home{background:radial-gradient(ellipse at 30% 20%,#1a1040 0%,var(--bg) 70%)}
+.home-logo{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:36px;animation:floatY 3s ease-in-out infinite}
+@keyframes floatY{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.home-board-icon{width:110px;height:110px;filter:drop-shadow(0 0 30px rgba(245,197,24,.5))}
+.home-title{font-size:2.6rem;font-weight:900;letter-spacing:6px;text-transform:uppercase;background:linear-gradient(135deg,var(--yellow),#ff9f43,var(--red));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.home-sub{font-size:.75rem;letter-spacing:3px;color:var(--muted);text-transform:uppercase}
+.mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:min(360px,90vw);margin-bottom:28px}
+.mode-card{background:var(--surface);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:22px 16px;display:flex;flex-direction:column;align-items:center;gap:10px;cursor:pointer;transition:transform .2s,border-color .2s,box-shadow .2s;position:relative;overflow:hidden}
+.mode-card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .3s;border-radius:18px}
+.mode-card:active{transform:scale(.95)}
+.mode-card.m2::before{background:linear-gradient(135deg,rgba(78,84,200,.3),rgba(143,148,251,.1))}
+.mode-card.m4::before{background:linear-gradient(135deg,rgba(245,197,24,.2),rgba(255,159,67,.1))}
+.mode-card:active::before{opacity:1}
+.mode-emoji{font-size:2.2rem}
+.mode-label{font-size:.8rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+.mode-desc{font-size:.68rem;color:var(--muted);text-align:center;line-height:1.5}
+.mode-badge{position:absolute;top:10px;right:10px;background:var(--yellow);color:#000;font-size:.55rem;font-weight:900;padding:2px 7px;border-radius:20px;letter-spacing:1px}
+.how-btn{background:none;border:1px solid rgba(255,255,255,.12);color:var(--muted);padding:10px 28px;border-radius:40px;font-size:.78rem;cursor:pointer;letter-spacing:1.5px;transition:all .2s}
+#howto{background:rgba(13,13,26,.96);backdrop-filter:blur(20px);padding:24px;overflow-y:auto}
+.howto-inner{max-width:380px;width:100%}
+.howto-title{font-size:1.4rem;font-weight:800;margin-bottom:20px}
+.rule{display:flex;gap:14px;margin-bottom:18px;align-items:flex-start}
+.rule-num{width:32px;height:32px;min-width:32px;border-radius:50%;background:linear-gradient(135deg,var(--yellow),#ff9f43);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.85rem;color:#000}
+.rule-text{font-size:.85rem;line-height:1.6;color:rgba(240,240,255,.8)}
+.close-btn{width:100%;padding:14px;background:linear-gradient(135deg,var(--yellow),#ff9f43);border:none;border-radius:14px;font-weight:800;font-size:.9rem;color:#000;cursor:pointer;margin-top:10px;letter-spacing:1px}
+#game{background:var(--bg);flex-direction:column;padding:0;gap:0;justify-content:flex-start}
+#top-bar{width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--surface);border-bottom:1px solid rgba(255,255,255,.05);flex-shrink:0;z-index:50}
+.tb-left{display:flex;align-items:center;gap:10px}
+.tb-back{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.07);border:none;color:#fff;font-size:1.2rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s}
+.tb-back:active{background:rgba(255,255,255,.18)}
+.tb-title{font-size:.85rem;font-weight:700;letter-spacing:2px;text-transform:uppercase}
+.tb-right{display:flex;gap:8px}
+.tb-btn{padding:7px 14px;border-radius:20px;border:none;font-size:.72rem;font-weight:700;cursor:pointer;letter-spacing:1px;transition:all .2s}
+.tb-undo{background:rgba(255,255,255,.07);color:var(--text)}
+.tb-restart{background:linear-gradient(135deg,var(--red),#ff6b6b);color:#fff}
+#turn-bar{width:100%;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:var(--surface2)}
+.turn-info{display:flex;align-items:center;gap:8px;font-size:.8rem;font-weight:600}
+.turn-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
+.turn-text{color:var(--muted);font-size:.7rem}
+.dice-area{display:flex;align-items:center;gap:8px}
+.dice-val{font-size:1.6rem;line-height:1;transition:transform .2s}
+.dice-val.rolled{animation:diceRoll .4s ease}
+@keyframes diceRoll{0%{transform:rotate(0) scale(.5)}60%{transform:rotate(20deg) scale(1.2)}100%{transform:rotate(0) scale(1)}}
+.roll-history{display:flex;gap:4px}
+.rh-dot{width:20px;height:20px;border-radius:6px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:.7rem}
+#board-area{flex:1;display:flex;align-items:center;justify-content:center;padding:8px;overflow:hidden;position:relative}
+#board-canvas{border-radius:16px;box-shadow:0 0 60px rgba(0,0,0,.8),0 0 0 2px rgba(255,255,255,.06);cursor:pointer;max-width:100%;max-height:100%}
+#bottom-bar{width:100%;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;background:var(--surface);border-top:1px solid rgba(255,255,255,.05);flex-shrink:0}
+#roll-btn{padding:12px 30px;border-radius:50px;border:none;font-size:.88rem;font-weight:900;letter-spacing:2px;cursor:pointer;text-transform:uppercase;transition:all .25s;position:relative;overflow:hidden}
+#roll-btn:active{transform:scale(.95)}
+#roll-btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+#roll-btn.can-roll{background:linear-gradient(135deg,var(--yellow),#ff9f43);color:#000;box-shadow:0 6px 30px rgba(245,197,24,.5);animation:pulseBtn 2s ease-in-out infinite}
+#roll-btn.rolled-state{background:linear-gradient(135deg,var(--green),#00b09b);color:#000;box-shadow:0 6px 20px rgba(58,227,116,.4)}
+#roll-btn.waiting{background:var(--surface2);color:var(--muted)}
+@keyframes pulseBtn{0%,100%{box-shadow:0 6px 30px rgba(245,197,24,.5),0 0 0 0 rgba(245,197,24,.4)}50%{box-shadow:0 6px 30px rgba(245,197,24,.5),0 0 0 12px rgba(245,197,24,0)}}
+#score-panel{display:flex;gap:6px;flex-wrap:wrap}
+.score-chip{display:flex;align-items:center;gap:5px;background:rgba(255,255,255,.05);border-radius:10px;padding:5px 10px;font-size:.72rem;font-weight:700}
+.score-chip .sc-dot{width:9px;height:9px;border-radius:50%}
+#win-screen{background:rgba(10,10,20,.97);backdrop-filter:blur(20px)}
+.win-inner{display:flex;flex-direction:column;align-items:center;text-align:center;gap:18px;padding:30px 24px;max-width:360px}
+.win-trophy{font-size:5rem;animation:winBounce 1s ease-in-out infinite}
+@keyframes winBounce{0%,100%{transform:translateY(0) scale(1)}40%{transform:translateY(-18px) scale(1.1)}60%{transform:translateY(-8px) scale(1.05)}}
+.win-title{font-size:2rem;font-weight:900;background:linear-gradient(135deg,var(--yellow),#ff9f43);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.win-sub{color:var(--muted);font-size:.85rem;line-height:1.6}
+.confetti-piece{position:absolute;width:8px;height:14px;border-radius:2px;animation:confettiFall var(--d,3s) linear var(--delay,0s) infinite}
+@keyframes confettiFall{0%{transform:translateY(-20px) rotate(0deg);opacity:1}100%{transform:translateY(100vh) rotate(720deg);opacity:0}}
+.win-actions{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.win-btn{padding:14px 28px;border-radius:50px;border:none;font-size:.85rem;font-weight:800;cursor:pointer;letter-spacing:1px;transition:transform .15s}
+.win-btn:active{transform:scale(.95)}
+.wb-home{background:rgba(255,255,255,.08);color:var(--text)}
+.wb-again{background:linear-gradient(135deg,var(--yellow),#ff9f43);color:#000}
+#toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(60px);z-index:999;background:rgba(30,30,53,.97);border:1px solid rgba(255,255,255,.1);color:#fff;padding:11px 22px;border-radius:30px;font-size:.8rem;white-space:nowrap;transition:transform .35s cubic-bezier(.34,1.56,.64,1);pointer-events:none;backdrop-filter:blur(12px)}
+#toast.show{transform:translateX(-50%) translateY(0)}
+#init-loader{position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .5s}
+#init-loader.gone{opacity:0;pointer-events:none}
+.loader-ring{width:56px;height:56px;border:4px solid rgba(255,255,255,.08);border-top-color:var(--yellow);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loader-txt{font-size:.78rem;color:var(--muted);letter-spacing:2px;animation:blink2 1.2s ease-in-out infinite}
+@keyframes blink2{0%,100%{opacity:1}50%{opacity:.3}}
+</style>
 </head>
 <body>
-
-  <!-- LOADER -->
-  <div id="loader">
-    <div class="logo-wrap">
-      <div class="ludo-icon">
-        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-          <!-- Board base -->
-          <rect x="5" y="5" width="90" height="90" rx="12" fill="#1a1a2e"/>
-          <!-- Four color quadrants -->
-          <rect x="5"  y="5"  width="42" height="42" rx="10" fill="#e84545" opacity="0.9"/>
-          <rect x="53" y="5"  width="42" height="42" rx="10" fill="#4a90e2" opacity="0.9"/>
-          <rect x="5"  y="53" width="42" height="42" rx="10" fill="#3ae374" opacity="0.9"/>
-          <rect x="53" y="53" width="42" height="42" rx="10" fill="#f5c518" opacity="0.9"/>
-          <!-- Center -->
-          <rect x="33" y="33" width="34" height="34" rx="6" fill="#13131f"/>
-          <polygon points="50,37 56,47 44,47" fill="#f5c518"/>
-          <polygon points="50,63 56,53 44,53" fill="#f5c518"/>
-          <!-- Pieces -->
-          <circle cx="19" cy="19" r="7" fill="#fff" opacity="0.9"/>
-          <circle cx="19" cy="19" r="4" fill="#e84545"/>
-          <circle cx="81" cy="19" r="7" fill="#fff" opacity="0.9"/>
-          <circle cx="81" cy="19" r="4" fill="#4a90e2"/>
-          <circle cx="19" cy="81" r="7" fill="#fff" opacity="0.9"/>
-          <circle cx="19" cy="81" r="4" fill="#3ae374"/>
-          <circle cx="81" cy="81" r="7" fill="#fff" opacity="0.9"/>
-          <circle cx="81" cy="81" r="4" fill="#f5c518"/>
-        </svg>
-      </div>
-      <div class="logo-title">Ludo</div>
-      <div class="logo-sub">Classic Board Game</div>
-    </div>
-
-    <div class="progress-track">
-      <div class="progress-fill"></div>
-    </div>
-    <div class="loading-text">Game Load Ho Raha Hai...</div>
+<div id="stars"></div>
+<div id="init-loader">
+  <div style="font-size:3.5rem;animation:floatY 2s ease-in-out infinite">&#127922;</div>
+  <div class="loader-ring"></div>
+  <div class="loader-txt">LUDO KING LOAD HO RAHA HAI...</div>
+</div>
+<div class="screen" id="home">
+  <div class="home-logo">
+    <svg class="home-board-icon" viewBox="0 0 100 100">
+      <rect x="2" y="2" width="96" height="96" rx="14" fill="#1a1a2e"/>
+      <rect x="2" y="2" width="44" height="44" rx="12" fill="#E84545" opacity=".95"/>
+      <rect x="54" y="2" width="44" height="44" rx="12" fill="#4A90E2" opacity=".95"/>
+      <rect x="2" y="54" width="44" height="44" rx="12" fill="#3AE374" opacity=".95"/>
+      <rect x="54" y="54" width="44" height="44" rx="12" fill="#F5C518" opacity=".95"/>
+      <rect x="30" y="30" width="40" height="40" rx="8" fill="#0d0d1a"/>
+      <polygon points="50,34 58,46 42,46" fill="#F5C518"/>
+      <polygon points="50,66 58,54 42,54" fill="#F5C518"/>
+      <circle cx="19" cy="19" r="8" fill="#fff" opacity=".9"/><circle cx="19" cy="19" r="5" fill="#E84545"/>
+      <circle cx="81" cy="19" r="8" fill="#fff" opacity=".9"/><circle cx="81" cy="19" r="5" fill="#4A90E2"/>
+      <circle cx="19" cy="81" r="8" fill="#fff" opacity=".9"/><circle cx="19" cy="81" r="5" fill="#3AE374"/>
+      <circle cx="81" cy="81" r="8" fill="#fff" opacity=".9"/><circle cx="81" cy="81" r="5" fill="#F5C518"/>
+    </svg>
+    <div class="home-title">Ludo King</div>
+    <div class="home-sub">Classic Board Game</div>
   </div>
-
-  <!-- ERROR SCREEN -->
-  <div id="error-screen">
-    <div class="error-icon">📡</div>
-    <div class="error-title" id="error-title">Kuch Gadbad Hui!</div>
-    <div class="error-msg" id="error-msg">
-      Internet connection check karo ya thodi der baad dobara try karo.
+  <div class="mode-grid">
+    <div class="mode-card m2" onclick="startGame(2)">
+      <span class="mode-emoji">&#128101;</span>
+      <span class="mode-label">2 Players</span>
+      <span class="mode-desc">Red vs Blue<br>Quick Match</span>
     </div>
-    <button class="retry-btn" onclick="retryLoad()">🔄 Dobara Try Karo</button>
+    <div class="mode-card m4" onclick="startGame(4)">
+      <span class="mode-badge">HOT</span>
+      <span class="mode-emoji">&#128106;</span>
+      <span class="mode-label">4 Players</span>
+      <span class="mode-desc">Full Board<br>Ultimate Fun</span>
+    </div>
   </div>
-
-  <!-- GAME IFRAME -->
-  <div id="game-wrap">
-    <iframe
-      id="game-frame"
-      src="about:blank"
-      allow="autoplay; fullscreen; accelerometer; gyroscope"
-      allowfullscreen
-      scrolling="yes"
-    ></iframe>
+  <button class="how-btn" onclick="showScreen('howto')">&#128214; Kaise Khelein?</button>
+</div>
+<div class="screen hidden" id="howto">
+  <div class="howto-inner">
+    <div class="howto-title">&#128214; Kaise Khelein?</div>
+    <div class="rule"><div class="rule-num">1</div><div class="rule-text"><b>Dice Roll karo</b> - Apni baari pe ROLL KARO button dabao. 6 aaye toh token ghar se nikalo.</div></div>
+    <div class="rule"><div class="rule-num">2</div><div class="rule-text"><b>Token chuno</b> - Dice ke baad highlight hue token ko touch karo chalne ke liye.</div></div>
+    <div class="rule"><div class="rule-num">3</div><div class="rule-text"><b>Kaato!</b> - Dushman ke token pe chadh jao toh woh ghar wapas jata hai! &#128520;</div></div>
+    <div class="rule"><div class="rule-num">4</div><div class="rule-text"><b>Safe zones</b> - Star wale squares pe kaata nahi jaata.</div></div>
+    <div class="rule"><div class="rule-num">5</div><div class="rule-text"><b>6 pe bonus</b> - 6 aaye toh ek aur turn milta hai! Teen 6 pe turn cancel hota hai.</div></div>
+    <div class="rule"><div class="rule-num">6</div><div class="rule-text"><b>Jeetna</b> - Sabse pehle saare 4 tokens center pahuncha do - tum jeeto! &#127942;</div></div>
+    <button class="close-btn" onclick="showScreen('home')">&#9989; Samajh Gaya, Khelo!</button>
   </div>
-
-  <!-- TOP BAR -->
+</div>
+<div class="screen hidden" id="game">
   <div id="top-bar">
-    <div class="back-btn" onclick="handleBack()" title="Back">
-      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    <div class="tb-left">
+      <button class="tb-back" onclick="goHome()">&#8592;</button>
+      <span class="tb-title">&#127922; Ludo King</span>
     </div>
-    <div class="bar-title">🎲 Ludo</div>
-    <div class="net-dot" id="net-dot"></div>
+    <div class="tb-right">
+      <button class="tb-btn tb-undo" onclick="undoMove()">&#8617; Undo</button>
+      <button class="tb-btn tb-restart" onclick="restartGame()">&#8635; New</button>
+    </div>
   </div>
-
-  <!-- TOAST -->
-  <div id="toast">📶 Internet nahi hai!</div>
-
-  <!-- EXIT CONFIRM -->
-  <div id="exit-overlay">
-    <div class="exit-card">
-      <div class="exit-emoji">🎲</div>
-      <div class="exit-heading">Game Chhod Dein?</div>
-      <div class="exit-subtext">Aap game se bahar jaana chahte hain? Progress save nahi hogi.</div>
-      <div class="exit-actions">
-        <button class="btn-stay" onclick="closeExitDialog()">Khelte Rahein</button>
-        <button class="btn-exit" onclick="exitGame()">Bahar Jao</button>
+  <div id="turn-bar">
+    <div class="turn-info">
+      <div class="turn-dot" id="turn-dot"></div>
+      <div>
+        <div id="turn-name" style="font-size:.85rem;font-weight:700"></div>
+        <div class="turn-text" id="turn-msg">Dice roll karo</div>
       </div>
     </div>
+    <div class="dice-area">
+      <div class="dice-val" id="dice-display">&#127922;</div>
+      <div class="roll-history" id="roll-history"></div>
+    </div>
   </div>
+  <div id="board-area">
+    <canvas id="board-canvas"></canvas>
+  </div>
+  <div id="bottom-bar">
+    <div id="score-panel"></div>
+    <button id="roll-btn" class="can-roll" onclick="rollDice()">&#127922; ROLL KARO</button>
+  </div>
+</div>
+<div class="screen hidden" id="win-screen">
+  <div id="confetti-container" style="position:absolute;inset:0;pointer-events:none;overflow:hidden"></div>
+  <div class="win-inner">
+    <div class="win-trophy">&#127942;</div>
+    <div class="win-title" id="win-title">Red Jeeta!</div>
+    <div class="win-sub">Shaandaar! Sabse pehle saare tokens ghar pahuncha diye. Wah kya performance tha! &#127881;</div>
+    <div class="win-actions">
+      <button class="win-btn wb-home" onclick="goHome()">&#127968; Home</button>
+      <button class="win-btn wb-again" onclick="restartGame()">&#128260; Dobara Khelo</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<script>
+const DICE_FACES=['&#9856;','&#9857;','&#9858;','&#9859;','&#9860;','&#9861;'];
+const PC={R:'#E84545',B:'#4A90E2',G:'#3AE374',Y:'#F5C518'};
+const PN={R:'Red',B:'Blue',G:'Green',Y:'Yellow'};
+const AP=['R','B','G','Y'];
+const SAFE=new Set([0,8,13,21,26,34,39,47]);
+const PS={R:0,B:13,G:26,Y:39};
+let CELL,canvas,ctx,boardSize,numPlayers=4,state={},animFrame;
 
-  <script>
-    const GAME_URL = 'https://callx-server.onrender.com/ludo.html';
-    const loader      = document.getElementById('loader');
-    const errorScreen = document.getElementById('error-screen');
-    const gameFrame   = document.getElementById('game-frame');
-    const topBar      = document.getElementById('top-bar');
-    const toast       = document.getElementById('toast');
-    const netDot      = document.getElementById('net-dot');
-    const exitOverlay = document.getElementById('exit-overlay');
+// 52-cell path [col,row]
+const PATH=[[6,13],[6,12],[6,11],[6,10],[6,9],[5,8],[4,8],[3,8],[2,8],[1,8],[0,8],[0,7],[0,6],[1,6],[2,6],[3,6],[4,6],[5,6],[6,5],[6,4],[6,3],[6,2],[6,1],[6,0],[7,0],[8,0],[8,1],[8,2],[8,3],[8,4],[8,5],[9,6],[10,6],[11,6],[12,6],[13,6],[14,6],[14,7],[14,8],[13,8],[12,8],[11,8],[10,8],[9,8],[8,9],[8,10],[8,11],[8,12],[8,13],[8,14],[7,14],[7,13]];
+const HC={R:[[7,13],[7,12],[7,11],[7,10],[7,9],[7,8]],B:[[1,7],[2,7],[3,7],[4,7],[5,7],[6,7]],G:[[7,1],[7,2],[7,3],[7,4],[7,5],[7,6]],Y:[[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]]};
+const YARDS={R:[[2,11],[3,11],[2,12],[3,12]],B:[[11,2],[12,2],[11,3],[12,3]],G:[[2,2],[3,2],[2,3],[3,3]],Y:[[11,11],[12,11],[11,12],[12,12]]};
 
-    let gameLoaded    = false;
-    let historyStack  = [GAME_URL];
-    let exitDialogOpen = false;
+function initState(n){
+  numPlayers=n;
+  const players=AP.slice(0,n);
+  const tokens={};players.forEach(p=>{tokens[p]=[-1,-1,-1,-1]});
+  state={players,tokens,currentIdx:0,diceVal:null,rolled:false,movablePieces:[],consecutiveSixes:0,history:[],finished:[],scores:{}};
+  players.forEach(p=>{state.scores[p]=0});
+}
 
-    /* ── Internet check ── */
-    function isOnline() { return navigator.onLine; }
+function curP(){return state.players[state.currentIdx]}
 
-    function updateNetDot() {
-      netDot.classList.toggle('offline', !isOnline());
-    }
+function getCell(player,pos){
+  if(pos<0||pos===57)return null;
+  if(pos>=52){const h=HC[player][pos-52];return h||null}
+  return PATH[(PS[player]+pos)%52];
+}
 
-    function showToast(msg) {
-      toast.textContent = msg;
-      toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 3000);
-    }
+function initCanvas(){
+  canvas=document.getElementById('board-canvas');
+  ctx=canvas.getContext('2d');
+  resize();
+  window.addEventListener('resize',resize);
+  canvas.addEventListener('click',onCC);
+  canvas.addEventListener('touchstart',onCT,{passive:true});
+}
 
-    window.addEventListener('online',  () => { updateNetDot(); showToast('✅ Internet wapas aa gaya!'); });
-    window.addEventListener('offline', () => { updateNetDot(); showToast('📶 Internet nahi hai!'); });
+function resize(){
+  const area=document.getElementById('board-area');
+  boardSize=Math.min(area.clientWidth-16,area.clientHeight-16,500);
+  CELL=boardSize/15;
+  canvas.width=boardSize;canvas.height=boardSize;
+  drawBoard();
+}
 
-    /* ── Load game ── */
-    function loadGame() {
-      if (!isOnline()) {
-        showError('No Internet', 'Aapka internet connection nahi hai. Connect karke retry karo.');
-        return;
-      }
+function C(n){return n*CELL}
 
-      loader.classList.remove('hidden');
-      errorScreen.classList.remove('visible');
-      topBar.classList.remove('visible');
-      gameLoaded = false;
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
+}
 
-      gameFrame.src = 'about:blank';
-      setTimeout(() => {
-        gameFrame.src = GAME_URL;
-      }, 80);
-    }
+function ha(hex,a){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${a})`}
 
-    function retryLoad() { loadGame(); }
+function drawBoard(){
+  if(!ctx)return;
+  ctx.clearRect(0,0,boardSize,boardSize);
+  // Board bg
+  ctx.fillStyle='#111122';
+  rr(0,0,boardSize,boardSize,C(.8));ctx.fill();
 
-    function showError(title, msg) {
-      loader.classList.add('hidden');
-      document.getElementById('error-title').textContent = title;
-      document.getElementById('error-msg').textContent   = msg;
-      errorScreen.classList.add('visible');
-    }
+  // Grid cells
+  for(let r=0;r<15;r++)for(let c=0;c<15;c++){
+    ctx.fillStyle='rgba(255,255,255,.02)';
+    ctx.strokeStyle='rgba(255,255,255,.04)';
+    ctx.lineWidth=.5;
+    rr(C(c)+.5,C(r)+.5,C(1)-1,C(1)-1,C(.08));
+    ctx.fill();ctx.stroke();
+  }
 
-    /* ── iframe events ── */
-    gameFrame.addEventListener('load', () => {
-      try {
-        const src = gameFrame.src;
-        if (!src || src === 'about:blank') return;
+  drawYard('R',1,9,5,5);drawYard('B',9,1,5,5);drawYard('G',1,1,5,5);drawYard('Y',9,9,5,5);
+  drawPath();drawHomeRows();drawCenter();
+  drawAllTokens();drawStars();
+}
 
-        gameLoaded = true;
-        loader.classList.add('hidden');
-        errorScreen.classList.remove('visible');
-        topBar.classList.add('visible');
-        updateNetDot();
+function drawYard(p,x,y,w,h){
+  const c=PC[p];
+  ctx.fillStyle=ha(c,.18);
+  rr(C(x),C(y),C(w),C(h),C(.7));ctx.fill();
+  ctx.strokeStyle=ha(c,.5);ctx.lineWidth=2;
+  rr(C(x),C(y),C(w),C(h),C(.7));ctx.stroke();
+  // inner circle
+  const cx=C(x+w/2),cy=C(y+h/2),radius=C(Math.min(w,h)/2-.5);
+  ctx.fillStyle=ha(c,.22);ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle=ha(c,.6);ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);ctx.stroke();
+  // label
+  ctx.fillStyle=ha(c,.7);ctx.font=`bold ${C(.45)}px Segoe UI`;ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillText(PN[p].toUpperCase(),C(x+w/2),C(y+h)-C(.12));
+}
 
-        // Push to history stack for back nav
-        if (historyStack[historyStack.length - 1] !== src) {
-          historyStack.push(src);
-        }
-      } catch(e) { /* cross-origin: ignore */ }
+function drawPath(){
+  PATH.forEach(([col,row],idx)=>{
+    const x=C(col),y=C(row);
+    let fill='#1c1c30';
+    if(idx===0)fill=ha(PC.R,.8);
+    else if(idx===13)fill=ha(PC.B,.8);
+    else if(idx===26)fill=ha(PC.G,.8);
+    else if(idx===39)fill=ha(PC.Y,.8);
+    ctx.fillStyle=fill;ctx.strokeStyle='rgba(255,255,255,.1)';ctx.lineWidth=1;
+    rr(x+1,y+1,C(1)-2,C(1)-2,C(.18));ctx.fill();ctx.stroke();
+  });
+}
+
+function drawHomeRows(){
+  Object.entries(HC).forEach(([p,cells])=>{
+    cells.slice(0,5).forEach(([col,row],i)=>{
+      ctx.fillStyle=ha(PC[p],.12+i*.14);ctx.strokeStyle=ha(PC[p],.3);ctx.lineWidth=1;
+      rr(C(col)+1,C(row)+1,C(1)-2,C(1)-2,C(.18));ctx.fill();ctx.stroke();
     });
+  });
+}
 
-    gameFrame.addEventListener('error', () => {
-      showError('Server Se Connect Nahi Hua', 'Game server response nahi de raha. Thodi der baad try karo.');
-    });
+function drawCenter(){
+  const trigs=[
+    {c:PC.R,pts:[[7,8],[8,8],[7.5,7]]},{c:PC.B,pts:[[7,7],[7,8],[8,7.5]]},
+    {c:PC.G,pts:[[7,7],[8,7],[7.5,8]]},{c:PC.Y,pts:[[8,7],[8,8],[7,7.5]]}
+  ];
+  ctx.fillStyle='#0d0d1a';ctx.fillRect(C(7),C(7),C(1),C(1));
+  trigs.forEach(({c,pts})=>{
+    ctx.fillStyle=ha(c,.9);ctx.beginPath();
+    ctx.moveTo(C(pts[0][0]),C(pts[0][1]));ctx.lineTo(C(pts[1][0]),C(pts[1][1]));ctx.lineTo(C(pts[2][0]),C(pts[2][1]));
+    ctx.closePath();ctx.fill();
+  });
+  ctx.fillStyle='rgba(255,255,255,.95)';ctx.font=`${C(.55)}px serif`;
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('\u2605',C(7.5),C(7.5));
+}
 
-    /* ── Back navigation ── */
-    function handleBack() {
-      try {
-        if (gameFrame.contentWindow && gameFrame.contentWindow.history.length > 1) {
-          gameFrame.contentWindow.history.back();
-          return;
-        }
-      } catch(e) { /* cross-origin */ }
+function drawStars(){
+  SAFE.forEach(idx=>{
+    if([0,13,26,39].includes(idx))return;
+    const [col,row]=PATH[idx];
+    ctx.fillStyle='rgba(255,255,100,.35)';ctx.font=`${C(.42)}px serif`;
+    ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('\u2605',C(col)+C(.5),C(row)+C(.5));
+  });
+}
 
-      if (historyStack.length > 1) {
-        historyStack.pop();
-        gameFrame.src = historyStack[historyStack.length - 1];
-      } else {
-        showExitDialog();
-      }
+function drawAllTokens(){
+  if(!state.players)return;
+  const t=Date.now();
+  state.players.forEach(p=>{state.tokens[p].forEach((pos,ti)=>drawToken(p,ti,pos,t))});
+}
+
+function drawToken(player,ti,pos,t){
+  let col,row;
+  if(pos===-1){const yc=YARDS[player][ti];col=yc[0];row=yc[1]}
+  else if(pos===57)return;
+  else if(pos>=52){const hc=HC[player][pos-52];if(!hc)return;col=hc[0];row=hc[1]}
+  else{const cell=getCell(player,pos);if(!cell)return;col=cell[0];row=cell[1]}
+  const cx=C(col)+C(.5),cy=C(row)+C(.5),r=C(.34);
+  const color=PC[player];
+  const isM=state.movablePieces.includes(ti)&&curP()===player;
+  if(isM){
+    const pulse=.45+.3*Math.sin(t/180);
+    ctx.save();ctx.globalAlpha=pulse;ctx.strokeStyle=color;ctx.lineWidth=2.5;
+    ctx.beginPath();ctx.arc(cx,cy,r+C(.13),0,Math.PI*2);ctx.stroke();ctx.restore();
+  }
+  ctx.save();ctx.shadowColor='rgba(0,0,0,.5)';ctx.shadowBlur=8;ctx.shadowOffsetY=2;
+  ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
+  ctx.beginPath();ctx.arc(cx,cy,r*.72,0,Math.PI*2);
+  const gr=ctx.createRadialGradient(cx-r*.2,cy-r*.2,0,cx,cy,r*.72);
+  gr.addColorStop(0,lighten(color,.3));gr.addColorStop(1,color);
+  ctx.fillStyle=gr;ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.9)';ctx.font=`bold ${C(.24)}px Segoe UI`;
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(ti+1,cx,cy);
+  ctx.restore();
+}
+
+function lighten(hex,a){
+  const r=Math.min(255,parseInt(hex.slice(1,3),16)+Math.round(255*a));
+  const g=Math.min(255,parseInt(hex.slice(3,5),16)+Math.round(255*a));
+  const b=Math.min(255,parseInt(hex.slice(5,7),16)+Math.round(255*a));
+  return`rgb(${r},${g},${b})`;
+}
+
+function startLoop(){
+  cancelAnimationFrame(animFrame);
+  (function loop(){animFrame=requestAnimationFrame(loop);drawBoard()})();
+}
+
+function onCC(e){const rect=canvas.getBoundingClientRect();handleClick(e.clientX-rect.left,e.clientY-rect.top)}
+function onCT(e){const rect=canvas.getBoundingClientRect(),t=e.touches[0];handleClick(t.clientX-rect.left,t.clientY-rect.top)}
+
+function handleClick(x,y){
+  if(!state.rolled||!state.movablePieces.length)return;
+  const player=curP();
+  const cc=Math.floor(x/CELL),cr=Math.floor(y/CELL);
+  let clicked=-1;
+  state.tokens[player].forEach((pos,ti)=>{
+    if(!state.movablePieces.includes(ti))return;
+    let tc,tr;
+    if(pos===-1){const yc=YARDS[player][ti];tc=yc[0];tr=yc[1]}
+    else if(pos>=52){const hc=HC[player][pos-52];if(!hc)return;tc=hc[0];tr=hc[1]}
+    else{const cell=getCell(player,pos);if(!cell)return;tc=cell[0];tr=cell[1]}
+    if(tc===cc&&tr===cr)clicked=ti;
+  });
+  if(clicked!==-1)moveToken(player,clicked);
+}
+
+function rollDice(){
+  if(state.rolled)return;
+  const btn=document.getElementById('roll-btn');
+  btn.disabled=true;
+  let count=0;
+  const anim=setInterval(()=>{
+    const fake=Math.floor(Math.random()*6)+1;
+    document.getElementById('dice-display').textContent=DICE_FACES[fake-1];
+    if(++count>=9){
+      clearInterval(anim);
+      const val=Math.floor(Math.random()*6)+1;
+      state.diceVal=val;state.rolled=true;
+      const dd=document.getElementById('dice-display');
+      dd.textContent=DICE_FACES[val-1];
+      dd.classList.remove('rolled');void dd.offsetWidth;dd.classList.add('rolled');
+      addRH(val);checkMovable();
     }
+  },55);
+}
 
-    /* ── Hardware back button (Android WebView / browser back) ── */
-    window.addEventListener('popstate', (e) => {
-      e.preventDefault();
-      if (exitDialogOpen) {
-        closeExitDialog();
-        return;
-      }
-      handleBack();
-    });
+function addRH(v){
+  const rh=document.getElementById('roll-history');
+  const d=document.createElement('div');d.className='rh-dot';d.textContent=v;
+  d.style.color=v===6?'#F5C518':'#f0f0ff';rh.appendChild(d);
+  if(rh.children.length>5)rh.removeChild(rh.firstChild);
+}
 
-    // Push initial state so popstate fires on back
-    history.pushState({ page: 1 }, '', '');
-    history.pushState({ page: 2 }, '', '');
+function checkMovable(){
+  const p=curP(),val=state.diceVal,movable=[];
+  state.tokens[p].forEach((pos,ti)=>{
+    if(pos===57)return;
+    if(pos===-1){if(val===6)movable.push(ti);return}
+    if(pos>=52){const ni=pos-52+val;if(ni<=5)movable.push(ti);return}
+    if(pos+val<=56)movable.push(ti);
+  });
+  state.movablePieces=movable;
+  if(!movable.length){
+    showToast(PN[p]+': Koi move nahi! Skip.');
+    setTimeout(()=>nextTurn(false),1100);updateRollBtn('waiting');return;
+  }
+  if(movable.length===1){setTimeout(()=>moveToken(p,movable[0]),380);return}
+  updateRollBtn('rolled-state');setMsg('Token choose karo!');
+}
 
-    /* ── Keyboard ESC ── */
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        if (exitDialogOpen) { closeExitDialog(); return; }
-        handleBack();
-      }
-    });
-
-    /* ── Exit dialog ── */
-    function showExitDialog()  { exitDialogOpen = true;  exitOverlay.classList.add('visible'); }
-    function closeExitDialog() { exitDialogOpen = false; exitOverlay.classList.remove('visible'); }
-    function exitGame() {
-      closeExitDialog();
-      gameFrame.src = 'about:blank';
-      topBar.classList.remove('visible');
-      loader.classList.remove('hidden');
-      setTimeout(() => {
-        loader.classList.add('hidden');
-        showError('Game Band Kar Di', 'Browser tab band karo ya app se bahar jao.');
-      }, 800);
+function moveToken(player,ti){
+  const val=state.diceVal,pos=state.tokens[player][ti];
+  state.history.push(JSON.parse(JSON.stringify(state.tokens)));
+  let newPos;
+  if(pos===-1){newPos=0;showToast(PN[player]+' ka token '+( ti+1)+' nikla! \uD83D\uDE80')}
+  else if(pos>=52){
+    newPos=pos+val;
+    if(newPos>56)newPos=pos;
+    if(newPos===57){
+      state.tokens[player][ti]=57;state.scores[player]++;
+      showToast('\uD83C\uDF89 '+PN[player]+' ka token '+(ti+1)+' ghar pahuncha!');
+      checkWin(player);nextTurn(val===6);updateSP();return;
     }
+  }else{
+    newPos=pos+val;
+    if(newPos>=52)newPos=51+(newPos-51);
+    if(newPos<52)checkCapture(player,newPos);
+  }
+  state.tokens[player][ti]=newPos;state.movablePieces=[];
+  nextTurn(val===6);updateSP();
+}
 
-    /* ── Click outside exit card ── */
-    exitOverlay.addEventListener('click', (e) => {
-      if (e.target === exitOverlay) closeExitDialog();
+function checkCapture(mp,newPos){
+  if(newPos>=52)return;
+  const gi=(PS[mp]+newPos)%52;
+  if(SAFE.has(gi))return;
+  state.players.forEach(p=>{
+    if(p===mp)return;
+    state.tokens[p].forEach((pos,ti)=>{
+      if(pos<0||pos>=52)return;
+      if((PS[p]+pos)%52===gi){state.tokens[p][ti]=-1;showToast('\uD83D\uDC80 '+PN[mp]+' ne '+PN[p]+' ko kaata!')}
     });
+  });
+}
 
-    /* ── Loader timeout fallback ── */
-    let loaderTimeout = setTimeout(() => {
-      if (!gameLoaded) {
-        showError('Loading Timeout', 'Game load hone mein bahut zyada time lag raha hai. Retry karo.');
-      }
-    }, 20000);
+function checkWin(player){
+  if(state.tokens[player].every(p=>p===57)&&!state.finished.includes(player)){
+    state.finished.push(player);
+    if(state.finished.length===1)setTimeout(()=>showWin(player),500);
+  }
+}
 
-    gameFrame.addEventListener('load', () => clearTimeout(loaderTimeout));
+function showWin(player){
+  document.getElementById('win-title').textContent=PN[player]+' Jeeta! \uD83C\uDF8A';
+  spawnConfetti(PC[player]);showScreen('win-screen');
+}
 
-    /* ── Start ── */
-    updateNetDot();
-    loadGame();
-  </script>
+function spawnConfetti(color){
+  const c=document.getElementById('confetti-container');c.innerHTML='';
+  const cols=[color,'#fff','#FFD700','#ff6b6b','#4ecdc4'];
+  for(let i=0;i<60;i++){
+    const el=document.createElement('div');el.className='confetti-piece';
+    el.style.cssText=`left:${Math.random()*100}%;background:${cols[Math.floor(Math.random()*cols.length)]};--d:${2+Math.random()*4}s;--delay:${Math.random()*2}s;transform:rotate(${Math.random()*360}deg)`;
+    c.appendChild(el);
+  }
+}
+
+function nextTurn(bonus){
+  state.rolled=false;state.diceVal=null;state.movablePieces=[];
+  if(bonus){
+    state.consecutiveSixes=(state.consecutiveSixes||0)+1;
+    if(state.consecutiveSixes>=3){showToast('Teen 6! Turn cancel \uD83D\uDE05');state.consecutiveSixes=0;advP()}
+    else showToast('6 aaya! Ek aur chance \uD83C\uDFB2');
+  }else{state.consecutiveSixes=0;advP()}
+  updateTurnUI();updateRollBtn('can-roll');
+}
+
+function advP(){
+  do{state.currentIdx=(state.currentIdx+1)%state.players.length}
+  while(state.finished.includes(curP())&&state.finished.length<state.players.length);
+}
+
+function updateTurnUI(){
+  const p=curP();
+  document.getElementById('turn-dot').style.background=PC[p];
+  document.getElementById('turn-dot').style.boxShadow='0 0 10px '+PC[p];
+  document.getElementById('turn-name').textContent=PN[p]+' ki Baari';
+  setMsg('Dice roll karo');document.getElementById('dice-display').textContent='\uD83C\uDFB2';
+}
+
+function setMsg(m){document.getElementById('turn-msg').textContent=m}
+
+function updateRollBtn(s){
+  const btn=document.getElementById('roll-btn');
+  btn.className=s;btn.disabled=s!=='can-roll';
+  if(s==='can-roll')btn.innerHTML='\uD83C\uDFB2 ROLL KARO';
+  else if(s==='rolled-state')btn.innerHTML='\u2705 Token Chuno';
+  else btn.innerHTML='\u23F3 Ruko...';
+}
+
+function updateSP(){
+  const panel=document.getElementById('score-panel');panel.innerHTML='';
+  state.players.forEach(p=>{
+    const chip=document.createElement('div');chip.className='score-chip';
+    chip.innerHTML=`<div class="sc-dot" style="background:${PC[p]}"></div><span>${state.scores[p]}/4</span>`;
+    panel.appendChild(chip);
+  });
+}
+
+function undoMove(){
+  if(!state.history.length){showToast('Koi move nahi undo karne ko!');return}
+  state.tokens=state.history.pop();state.rolled=false;state.diceVal=null;state.movablePieces=[];
+  updateTurnUI();updateRollBtn('can-roll');updateSP();showToast('\u21A9 Move undo ho gaya!');
+}
+
+function restartGame(){
+  initState(numPlayers);updateTurnUI();updateRollBtn('can-roll');updateSP();
+  document.getElementById('roll-history').innerHTML='';showScreen('game');
+}
+
+function goHome(){cancelAnimationFrame(animFrame);showScreen('home')}
+
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
+}
+
+function startGame(n){
+  initState(n);showScreen('game');updateTurnUI();updateRollBtn('can-roll');updateSP();
+  document.getElementById('roll-history').innerHTML='';
+  startLoop();
+}
+
+let toastTimer;
+function showToast(msg){
+  const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2400);
+}
+
+function makeStars(){
+  const c=document.getElementById('stars');
+  for(let i=0;i<80;i++){
+    const s=document.createElement('div');s.className='star';
+    s.style.cssText=`left:${Math.random()*100}%;top:${Math.random()*100}%;--d:${2+Math.random()*4}s;--delay:${Math.random()*4}s;opacity:${.2+Math.random()*.5}`;
+    c.appendChild(s);
+  }
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.code==='Space'||e.code==='Enter'){if(!state.rolled)rollDice()}
+  if(e.key==='Escape'){
+    const a=document.querySelector('.screen:not(.hidden)');
+    if(a&&a.id==='game')goHome();else if(a&&a.id==='howto')showScreen('home');
+  }
+});
+
+window.addEventListener('DOMContentLoaded',()=>{
+  makeStars();initCanvas();
+  setTimeout(()=>{
+    document.getElementById('init-loader').classList.add('gone');
+    setTimeout(()=>document.getElementById('init-loader').style.display='none',500);
+  },1400);
+});
+</script>
 </body>
 </html>
