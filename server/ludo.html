@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Ludo Game</title>
+
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #0a0a12;
+      --accent: #f5c518;
+      --accent2: #e84545;
+      --accent3: #3ae374;
+      --accent4: #4a90e2;
+      --card: #13131f;
+      --text: #f0f0f0;
+      --muted: #555570;
+      --loader-size: 56px;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      font-family: 'Segoe UI', sans-serif;
+      color: var(--text);
+      touch-action: manipulation;
+    }
+
+    /* ── LOADER SCREEN ── */
+    #loader {
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+
+    #loader.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .logo-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .ludo-icon {
+      width: 90px;
+      height: 90px;
+      position: relative;
+      animation: floatIcon 3s ease-in-out infinite;
+    }
+
+    @keyframes floatIcon {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-8px); }
+    }
+
+    .ludo-icon svg {
+      width: 100%;
+      height: 100%;
+      drop-shadow: 0 0 20px var(--accent);
+      filter: drop-shadow(0 0 18px var(--accent));
+    }
+
+    .logo-title {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      background: linear-gradient(135deg, var(--accent) 0%, #ff9f43 50%, var(--accent2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .logo-sub {
+      font-size: 0.78rem;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    /* Progress bar */
+    .progress-track {
+      width: min(280px, 80vw);
+      height: 5px;
+      background: #1e1e2e;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 999px;
+      transition: width 0.3s ease;
+      animation: progressAnim 3s ease forwards;
+    }
+
+    @keyframes progressAnim {
+      0%   { width: 0%; }
+      30%  { width: 40%; }
+      60%  { width: 70%; }
+      85%  { width: 88%; }
+      100% { width: 95%; }
+    }
+
+    .loading-text {
+      font-size: 0.75rem;
+      color: var(--muted);
+      letter-spacing: 1.5px;
+      animation: blink 1.4s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    /* ── ERROR SCREEN ── */
+    #error-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 998;
+      background: var(--bg);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 24px;
+      text-align: center;
+    }
+
+    #error-screen.visible {
+      display: flex;
+    }
+
+    .error-icon {
+      font-size: 4rem;
+      animation: shake 0.5s ease;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%       { transform: translateX(-8px); }
+      40%       { transform: translateX(8px); }
+      60%       { transform: translateX(-5px); }
+      80%       { transform: translateX(5px); }
+    }
+
+    .error-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--accent2);
+    }
+
+    .error-msg {
+      font-size: 0.9rem;
+      color: var(--muted);
+      max-width: 320px;
+      line-height: 1.6;
+    }
+
+    .retry-btn {
+      margin-top: 8px;
+      padding: 14px 36px;
+      background: linear-gradient(135deg, var(--accent), #ff9f43);
+      color: #000;
+      font-weight: 800;
+      font-size: 0.9rem;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      box-shadow: 0 6px 24px rgba(245, 197, 24, 0.35);
+    }
+
+    .retry-btn:active {
+      transform: scale(0.95);
+      box-shadow: 0 2px 10px rgba(245, 197, 24, 0.2);
+    }
+
+    /* ── GAME IFRAME ── */
+    #game-wrap {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      background: #000;
+    }
+
+    #game-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+      background: #000;
+    }
+
+    /* ── TOP BAR (minimal, over game) ── */
+    #top-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      height: 44px;
+      background: linear-gradient(180deg, rgba(0,0,0,0.75) 0%, transparent 100%);
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      gap: 10px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+
+    #top-bar.visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .back-btn {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 50%;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+      transition: background 0.2s;
+    }
+
+    .back-btn:active {
+      background: rgba(255,255,255,0.25);
+    }
+
+    .back-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: #fff;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .bar-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.8);
+      flex: 1;
+    }
+
+    /* dot indicator */
+    .net-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent3);
+      box-shadow: 0 0 6px var(--accent3);
+    }
+
+    .net-dot.offline {
+      background: var(--accent2);
+      box-shadow: 0 0 6px var(--accent2);
+    }
+
+    /* ── NO INTERNET TOAST ── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      z-index: 500;
+      background: #1e1e2e;
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--text);
+      padding: 12px 22px;
+      border-radius: 12px;
+      font-size: 0.82rem;
+      white-space: nowrap;
+      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    }
+
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ── EXIT CONFIRM ── */
+    #exit-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    #exit-overlay.visible {
+      display: flex;
+    }
+
+    .exit-card {
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 28px 24px;
+      max-width: 320px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+      animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes popIn {
+      from { transform: scale(0.85); opacity: 0; }
+      to   { transform: scale(1);    opacity: 1; }
+    }
+
+    .exit-emoji { font-size: 2.5rem; margin-bottom: 10px; }
+
+    .exit-heading {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .exit-subtext {
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 22px;
+    }
+
+    .exit-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .exit-actions button {
+      flex: 1;
+      padding: 13px 0;
+      border-radius: 12px;
+      border: none;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+
+    .exit-actions button:active { transform: scale(0.95); }
+
+    .btn-stay {
+      background: rgba(255,255,255,0.07);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.1) !important;
+    }
+
+    .btn-exit {
+      background: linear-gradient(135deg, var(--accent2), #ff6b6b);
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LOADER -->
+  <div id="loader">
+    <div class="logo-wrap">
+      <div class="ludo-icon">
+        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <!-- Board base -->
+          <rect x="5" y="5" width="90" height="90" rx="12" fill="#1a1a2e"/>
+          <!-- Four color quadrants -->
+          <rect x="5"  y="5"  width="42" height="42" rx="10" fill="#e84545" opacity="0.9"/>
+          <rect x="53" y="5"  width="42" height="42" rx="10" fill="#4a90e2" opacity="0.9"/>
+          <rect x="5"  y="53" width="42" height="42" rx="10" fill="#3ae374" opacity="0.9"/>
+          <rect x="53" y="53" width="42" height="42" rx="10" fill="#f5c518" opacity="0.9"/>
+          <!-- Center -->
+          <rect x="33" y="33" width="34" height="34" rx="6" fill="#13131f"/>
+          <polygon points="50,37 56,47 44,47" fill="#f5c518"/>
+          <polygon points="50,63 56,53 44,53" fill="#f5c518"/>
+          <!-- Pieces -->
+          <circle cx="19" cy="19" r="7" fill="#fff" opacity="0.9"/>
+          <circle cx="19" cy="19" r="4" fill="#e84545"/>
+          <circle cx="81" cy="19" r="7" fill="#fff" opacity="0.9"/>
+          <circle cx="81" cy="19" r="4" fill="#4a90e2"/>
+          <circle cx="19" cy="81" r="7" fill="#fff" opacity="0.9"/>
+          <circle cx="19" cy="81" r="4" fill="#3ae374"/>
+          <circle cx="81" cy="81" r="7" fill="#fff" opacity="0.9"/>
+          <circle cx="81" cy="81" r="4" fill="#f5c518"/>
+        </svg>
+      </div>
+      <div class="logo-title">Ludo</div>
+      <div class="logo-sub">Classic Board Game</div>
+    </div>
+
+    <div class="progress-track">
+      <div class="progress-fill"></div>
+    </div>
+    <div class="loading-text">Game Load Ho Raha Hai...</div>
+  </div>
+
+  <!-- ERROR SCREEN -->
+  <div id="error-screen">
+    <div class="error-icon">📡</div>
+    <div class="error-title" id="error-title">Kuch Gadbad Hui!</div>
+    <div class="error-msg" id="error-msg">
+      Internet connection check karo ya thodi der baad dobara try karo.
+    </div>
+    <button class="retry-btn" onclick="retryLoad()">🔄 Dobara Try Karo</button>
+  </div>
+
+  <!-- GAME IFRAME -->
+  <div id="game-wrap">
+    <iframe
+      id="game-frame"
+      src="about:blank"
+      allow="autoplay; fullscreen; accelerometer; gyroscope"
+      allowfullscreen
+      scrolling="yes"
+    ></iframe>
+  </div>
+
+  <!-- TOP BAR -->
+  <div id="top-bar">
+    <div class="back-btn" onclick="handleBack()" title="Back">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    </div>
+    <div class="bar-title">🎲 Ludo</div>
+    <div class="net-dot" id="net-dot"></div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast">📶 Internet nahi hai!</div>
+
+  <!-- EXIT CONFIRM -->
+  <div id="exit-overlay">
+    <div class="exit-card">
+      <div class="exit-emoji">🎲</div>
+      <div class="exit-heading">Game Chhod Dein?</div>
+      <div class="exit-subtext">Aap game se bahar jaana chahte hain? Progress save nahi hogi.</div>
+      <div class="exit-actions">
+        <button class="btn-stay" onclick="closeExitDialog()">Khelte Rahein</button>
+        <button class="btn-exit" onclick="exitGame()">Bahar Jao</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const GAME_URL = 'https://callx-server.onrender.com/ludo.html';
+    const loader      = document.getElementById('loader');
+    const errorScreen = document.getElementById('error-screen');
+    const gameFrame   = document.getElementById('game-frame');
+    const topBar      = document.getElementById('top-bar');
+    const toast       = document.getElementById('toast');
+    const netDot      = document.getElementById('net-dot');
+    const exitOverlay = document.getElementById('exit-overlay');
+
+    let gameLoaded    = false;
+    let historyStack  = [GAME_URL];
+    let exitDialogOpen = false;
+
+    /* ── Internet check ── */
+    function isOnline() { return navigator.onLine; }
+
+    function updateNetDot() {
+      netDot.classList.toggle('offline', !isOnline());
+    }
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    window.addEventListener('online',  () => { updateNetDot(); showToast('✅ Internet wapas aa gaya!'); });
+    window.addEventListener('offline', () => { updateNetDot(); showToast('📶 Internet nahi hai!'); });
+
+    /* ── Load game ── */
+    function loadGame() {
+      if (!isOnline()) {
+        showError('No Internet', 'Aapka internet connection nahi hai. Connect karke retry karo.');
+        return;
+      }
+
+      loader.classList.remove('hidden');
+      errorScreen.classList.remove('visible');
+      topBar.classList.remove('visible');
+      gameLoaded = false;
+
+      gameFrame.src = 'about:blank';
+      setTimeout(() => {
+        gameFrame.src = GAME_URL;
+      }, 80);
+    }
+
+    function retryLoad() { loadGame(); }
+
+    function showError(title, msg) {
+      loader.classList.add('hidden');
+      document.getElementById('error-title').textContent = title;
+      document.getElementById('error-msg').textContent   = msg;
+      errorScreen.classList.add('visible');
+    }
+
+    /* ── iframe events ── */
+    gameFrame.addEventListener('load', () => {
+      try {
+        const src = gameFrame.src;
+        if (!src || src === 'about:blank') return;
+
+        gameLoaded = true;
+        loader.classList.add('hidden');
+        errorScreen.classList.remove('visible');
+        topBar.classList.add('visible');
+        updateNetDot();
+
+        // Push to history stack for back nav
+        if (historyStack[historyStack.length - 1] !== src) {
+          historyStack.push(src);
+        }
+      } catch(e) { /* cross-origin: ignore */ }
+    });
+
+    gameFrame.addEventListener('error', () => {
+      showError('Server Se Connect Nahi Hua', 'Game server response nahi de raha. Thodi der baad try karo.');
+    });
+
+    /* ── Back navigation ── */
+    function handleBack() {
+      try {
+        if (gameFrame.contentWindow && gameFrame.contentWindow.history.length > 1) {
+          gameFrame.contentWindow.history.back();
+          return;
+        }
+      } catch(e) { /* cross-origin */ }
+
+      if (historyStack.length > 1) {
+        historyStack.pop();
+        gameFrame.src = historyStack[historyStack.length - 1];
+      } else {
+        showExitDialog();
+      }
+    }
+
+    /* ── Hardware back button (Android WebView / browser back) ── */
+    window.addEventListener('popstate', (e) => {
+      e.preventDefault();
+      if (exitDialogOpen) {
+        closeExitDialog();
+        return;
+      }
+      handleBack();
+    });
+
+    // Push initial state so popstate fires on back
+    history.pushState({ page: 1 }, '', '');
+    history.pushState({ page: 2 }, '', '');
+
+    /* ── Keyboard ESC ── */
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (exitDialogOpen) { closeExitDialog(); return; }
+        handleBack();
+      }
+    });
+
+    /* ── Exit dialog ── */
+    function showExitDialog()  { exitDialogOpen = true;  exitOverlay.classList.add('visible'); }
+    function closeExitDialog() { exitDialogOpen = false; exitOverlay.classList.remove('visible'); }
+    function exitGame() {
+      closeExitDialog();
+      gameFrame.src = 'about:blank';
+      topBar.classList.remove('visible');
+      loader.classList.remove('hidden');
+      setTimeout(() => {
+        loader.classList.add('hidden');
+        showError('Game Band Kar Di', 'Browser tab band karo ya app se bahar jao.');
+      }, 800);
+    }
+
+    /* ── Click outside exit card ── */
+    exitOverlay.addEventListener('click', (e) => {
+      if (e.target === exitOverlay) closeExitDialog();
+    });
+
+    /* ── Loader timeout fallback ── */
+    let loaderTimeout = setTimeout(() => {
+      if (!gameLoaded) {
+        showError('Loading Timeout', 'Game load hone mein bahut zyada time lag raha hai. Retry karo.');
+      }
+    }, 20000);
+
+    gameFrame.addEventListener('load', () => clearTimeout(loaderTimeout));
+
+    /* ── Start ── */
+    updateNetDot();
+    loadGame();
+  </script>
+</body>
+</html>
