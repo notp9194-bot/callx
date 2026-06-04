@@ -651,10 +651,11 @@ app.post("/notify", async (req, res) => {
   } = req.body || {};
   if (!toUid) return res.status(400).json({ error: "toUid required" });
 
-  const isCall        = (type === "call" || type === "video_call");
+  const isCall           = (type === "call" || type === "video_call");
+  const isSpecialRequest = (type === "special_request");
   const isStatusReply = (type === "status_reply");
   const isMissedCall  = (type === "call_missed");
-  const skipBlockChecks = isStatusReply || isMissedCall;
+  const skipBlockChecks  = isStatusReply || isMissedCall || isSpecialRequest;
 
   try {
     const db = admin.database();
