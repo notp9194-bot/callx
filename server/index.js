@@ -652,15 +652,17 @@ app.post("/notify", async (req, res) => {
   if (!toUid) return res.status(400).json({ error: "toUid required" });
 
   const isCall           = (type === "call" || type === "video_call");
-  const isSpecialRequest = (type === "special_request");
+  const isSpecialRequest  = (type === "special_request");
+  const isUnblockNotify  = (type === "unblock_notify");
   const isStatusReply = (type === "status_reply");
   const isMissedCall  = (type === "call_missed");
-  const skipBlockChecks  = isStatusReply || isMissedCall || isSpecialRequest;
+  const skipBlockChecks   = isStatusReply || isMissedCall || isSpecialRequest || isUnblockNotify;
 
   try {
     const db = admin.database();
 
     const MAX_SPECIAL_REQUESTS = 3;
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
     const reads = [
       db.ref("users/" + toUid).once("value"),
@@ -678,13 +680,13 @@ app.post("/notify", async (req, res) => {
         ? db.ref("messages/" + chatId)
             .orderByChild("timestamp").limitToLast(5).once("value")
         : Promise.resolve(null),
-      // Special request attempt count
+      // Special request: attempt count + ts for limit & expire checks
       (isSpecialRequest && fromUid)
-        ? db.ref("specialRequests/" + toUid + "/" + fromUid + "/attemptCount").once("value")
+        ? db.ref("specialRequests/" + toUid + "/" + fromUid).once("value")
         : Promise.resolve(null)
     ];
 
-    const [receiverSnap, senderSnap, pbSnap, blockedSnap, mutedSnap, histSnap, attemptSnap]
+    const [receiverSnap, senderSnap, pbSnap, blockedSnap, mutedSnap, histSnap, sreqSnap]
       = await Promise.all(reads);
 
     const user = receiverSnap ? (receiverSnap.val() || {}) : {};
@@ -698,11 +700,22 @@ app.post("/notify", async (req, res) => {
     if (isPermaBlocked)
       return res.json({ ok: true, dropped: "permaBlocked" });
 
-    // Special request attempt limit check (server-side safety)
-    if (isSpecialRequest && fromUid) {
-      const attemptCount = (attemptSnap && attemptSnap.val()) ? Number(attemptSnap.val()) : 0;
+    // Special request: attempt limit + 7-day expire (server-side safety)
+    if (isSpecialRequest && fromUid && sreqSnap) {
+      const sreq         = sreqSnap.val() || {};
+      const attemptCount = Number(sreq.attemptCount || 0);
+      const reqTs        = Number(sreq.ts || 0);
+
+      // 7-day auto-expire — blocker ne respond nahi kiya
+      if (reqTs > 0 && (Date.now() - reqTs) > SEVEN_DAYS_MS) {
+        await db.ref("permaBlocked/" + toUid + "/" + fromUid).set(true);
+        await db.ref("specialRequests/" + toUid + "/" + fromUid).remove();
+        await db.ref("seenRequests/" + toUid + "/" + fromUid).remove();
+        return res.json({ ok: true, dropped: "expiredRequest" });
+      }
+
+      // Attempt limit
       if (attemptCount >= MAX_SPECIAL_REQUESTS) {
-        // Attempts khatam — permanent block enforce karo
         await db.ref("permaBlocked/" + toUid + "/" + fromUid).set(true);
         return res.json({ ok: true, dropped: "maxAttemptsReached" });
       }
