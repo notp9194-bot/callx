@@ -660,6 +660,8 @@ app.post("/notify", async (req, res) => {
   try {
     const db = admin.database();
 
+    const MAX_SPECIAL_REQUESTS = 3;
+
     const reads = [
       db.ref("users/" + toUid).once("value"),
       fromUid ? db.ref("users/" + fromUid).once("value") : Promise.resolve(null),
@@ -675,10 +677,14 @@ app.post("/notify", async (req, res) => {
       (chatId && !isCall)
         ? db.ref("messages/" + chatId)
             .orderByChild("timestamp").limitToLast(5).once("value")
+        : Promise.resolve(null),
+      // Special request attempt count
+      (isSpecialRequest && fromUid)
+        ? db.ref("specialRequests/" + toUid + "/" + fromUid + "/attemptCount").once("value")
         : Promise.resolve(null)
     ];
 
-    const [receiverSnap, senderSnap, pbSnap, blockedSnap, mutedSnap, histSnap]
+    const [receiverSnap, senderSnap, pbSnap, blockedSnap, mutedSnap, histSnap, attemptSnap]
       = await Promise.all(reads);
 
     const user = receiverSnap ? (receiverSnap.val() || {}) : {};
@@ -691,6 +697,16 @@ app.post("/notify", async (req, res) => {
 
     if (isPermaBlocked)
       return res.json({ ok: true, dropped: "permaBlocked" });
+
+    // Special request attempt limit check (server-side safety)
+    if (isSpecialRequest && fromUid) {
+      const attemptCount = (attemptSnap && attemptSnap.val()) ? Number(attemptSnap.val()) : 0;
+      if (attemptCount >= MAX_SPECIAL_REQUESTS) {
+        // Attempts khatam — permanent block enforce karo
+        await db.ref("permaBlocked/" + toUid + "/" + fromUid).set(true);
+        return res.json({ ok: true, dropped: "maxAttemptsReached" });
+      }
+    }
 
     let fromMobile = "", fromPhoto = "", fromThumb = "", fromLastSeen = "0";
     if (senderSnap) {
