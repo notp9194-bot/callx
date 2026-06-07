@@ -650,7 +650,9 @@ app.post("/notify", async (req, res) => {
     chatId, messageId, mediaUrl, force,
     // FIX-B: missed_call extra fields (sent by PushNotify.notifyMissedCall)
     callerPhoto = "", callerUid = "", callerName = "",
-    isVideo = false, callId = ""
+    isVideo = false, callId = "",
+    // Feature-3: missed call count (Android locally tracked — server just passes through to FCM)
+    missedCount = "1"
   } = req.body || {};
   if (!toUid) return res.status(400).json({ error: "toUid required" });
 
@@ -735,6 +737,21 @@ app.post("/notify", async (req, res) => {
       fromPhoto = String(req.body.fromPhoto);
     }
 
+    // ── Feature-4: Missed call — server se caller ka lastSeen + online fetch karo ──
+    // Android side async Firebase fetch karta hai, but server se bhi pass karo
+    // taaki killed state mein bhi notification mein lastSeen subText aaye.
+    let callerLastSeen = "0";
+    let callerOnline   = "false";
+    if (isMissedCall && (callerUid || fromUid)) {
+      try {
+        const callerRef  = callerUid || fromUid;
+        // senderSnap already fetched — reuse karo
+        const callerData = senderSnap ? (senderSnap.val() || {}) : {};
+        callerLastSeen   = String(callerData.lastSeen || 0);
+        callerOnline     = String(callerData.online   === true ? "true" : "false");
+      } catch (_) {}
+    }
+
     const history = getHistoryJson(histSnap, toUid);
     const isMuted = !skipBlockChecks && mutedSnap && mutedSnap.val() === true;
 
@@ -760,11 +777,18 @@ app.post("/notify", async (req, res) => {
         ...(isCall && text ? { callId: String(text) } : {}),
         // FIX-B: missed_call fields — client reads callerPhoto/callerUid/callerName/isVideo
         ...(isMissedCall ? {
-          callerPhoto: String(callerPhoto || fromPhoto || ""),
-          callerUid:   String(callerUid   || fromUid   || ""),
-          callerName:  String(callerName  || fromName  || ""),
-          isVideo:     String(isVideo === true || isVideo === "true"),
-          callId:      String(callId || "")
+          callerPhoto:    String(callerPhoto || fromPhoto || ""),
+          callerUid:      String(callerUid   || fromUid   || ""),
+          callerName:     String(callerName  || fromName  || ""),
+          isVideo:        String(isVideo === true || isVideo === "true"),
+          callId:         String(callId || ""),
+          // Feature-3: grouping count — Android SharedPrefs se track hota hai,
+          // server just passes through for multi-device / reinstall scenarios
+          missedCount:    String(missedCount || "1"),
+          // Feature-4: lastSeen — Android notification subText mein dikhta hai
+          // "Last seen 5 min ago" / "Online now"
+          callerLastSeen: callerLastSeen,
+          callerOnline:   callerOnline
         } : {})
       },
       android: {
@@ -797,7 +821,10 @@ const VALID_REEL_TYPES = new Set([
   "content_removed", "report_resolved", "sound_trending",
   "pinned_comment", "close_friend_post", "challenge",
   "reel_shared", "reel_saved", "reel_downloaded",
-  "weekly_digest", "collab_live"
+  "weekly_digest", "collab_live",
+  // Feature-3 (missed call grouping) se related nahi — ye repost notify fix hai:
+  // PushNotify.notifyReelRepost() type="repost" bhejta hai — pehle 400 error aata tha
+  "repost"
 ]);
 
 app.post("/notify/reel", async (req, res) => {
