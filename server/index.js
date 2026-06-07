@@ -647,7 +647,10 @@ app.post("/notify", async (req, res) => {
 
   const {
     toUid, fromUid, fromName, type, text,
-    chatId, messageId, mediaUrl, force
+    chatId, messageId, mediaUrl, force,
+    // FIX-B: missed_call extra fields (sent by PushNotify.notifyMissedCall)
+    callerPhoto = "", callerUid = "", callerName = "",
+    isVideo = false, callId = ""
   } = req.body || {};
   if (!toUid) return res.status(400).json({ error: "toUid required" });
 
@@ -655,7 +658,7 @@ app.post("/notify", async (req, res) => {
   const isSpecialRequest  = (type === "special_request");
   const isUnblockNotify  = (type === "unblock_notify");
   const isStatusReply = (type === "status_reply");
-  const isMissedCall  = (type === "call_missed");
+  const isMissedCall  = (type === "call_missed" || type === "missed_call"); // FIX-A: PushNotify sends "missed_call", legacy was "call_missed"
   const skipBlockChecks   = isStatusReply || isMissedCall || isSpecialRequest || isUnblockNotify;
 
   try {
@@ -754,11 +757,20 @@ app.post("/notify", async (req, res) => {
         muted:        isMuted   ? "1" : "0",
         history:      history,
         myThumb:      myThumb,
-        ...(isCall && text ? { callId: String(text) } : {})
+        ...(isCall && text ? { callId: String(text) } : {}),
+        // FIX-B: missed_call fields — client reads callerPhoto/callerUid/callerName/isVideo
+        ...(isMissedCall ? {
+          callerPhoto: String(callerPhoto || fromPhoto || ""),
+          callerUid:   String(callerUid   || fromUid   || ""),
+          callerName:  String(callerName  || fromName  || ""),
+          isVideo:     String(isVideo === true || isVideo === "true"),
+          callId:      String(callId || "")
+        } : {})
       },
       android: {
         priority: (isMuted && !isCall && !isStatusReply) ? "normal" : "high",
-        ...(isCall ? { ttl: 30000 } : {})
+        ...(isCall ? { ttl: 30000 } : {}),
+        ...(isMissedCall ? { ttl: 86400000 } : {})  // FIX-B: missed call 24h TTL (background/killed delivery)
       }
     };
 
