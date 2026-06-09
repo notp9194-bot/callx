@@ -1898,6 +1898,296 @@ app.get("/fcm/cleanup", async (req, res) => {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
+// GROUP JOIN REQUEST — APPROVE / REJECT
+// POST /group/approveRequest
+// Admin notification se seedha call hoti hai
+// Body: { groupId, adminUid, requestUid, action: "approve" | "reject" }
+// Response: { ok, action, groupName }
+// ══════════════════════════════════════════════════════════════════════════════
+app.post("/group/approveRequest", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  const { groupId, adminUid, requestUid, action } = req.body || {};
+
+  if (!groupId)    return res.status(400).json({ error: "groupId required" });
+  if (!adminUid)   return res.status(400).json({ error: "adminUid required" });
+  if (!requestUid) return res.status(400).json({ error: "requestUid required" });
+  if (action !== "approve" && action !== "reject")
+    return res.status(400).json({ error: "action must be 'approve' or 'reject'" });
+
+  try {
+    const db = admin.database();
+
+    // ── Parallel fetch: group + join request + requester user data ────────────
+    const [groupSnap, reqSnap, userSnap] = await Promise.all([
+      db.ref("groups/" + groupId).once("value"),
+      db.ref("groupJoinRequests/" + groupId + "/" + requestUid).once("value"),
+      db.ref("users/" + requestUid).once("value")
+    ]);
+
+    if (!groupSnap.exists())
+      return res.status(404).json({ error: "Group nahi mila" });
+
+    const group = groupSnap.val();
+
+    // ── Admin permission check ────────────────────────────────────────────────
+    const isOwner  = group.ownerId === adminUid;
+    const isAdmin  = group.admins && group.admins[adminUid];
+    if (!isOwner && !isAdmin)
+      return res.status(403).json({ error: "Sirf group admin ya owner ye kar sakta hai" });
+
+    // ── Request exist check ───────────────────────────────────────────────────
+    if (!reqSnap.exists())
+      return res.status(404).json({ error: "Join request nahi mili — shayad already processed" });
+
+    const userData = userSnap.val() || {};
+    const userName = userData.name || "User";
+    const updates  = {};
+
+    // ── Always remove the request ─────────────────────────────────────────────
+    updates["groupJoinRequests/" + groupId + "/" + requestUid] = null;
+    updates["seenRequests/"      + groupId + "/" + requestUid] = null;
+
+    if (action === "approve") {
+      // ── Member limit re-check ───────────────────────────────────────────────
+      const memberCount = group.members ? Object.keys(group.members).length : 0;
+      const limit       = group.memberLimit || 256;
+      if (memberCount >= limit) {
+        // Still remove the request
+        await db.ref().update(updates);
+        return res.status(429).json({ error: "Group full hai — max " + limit + " members" });
+      }
+
+      // ── Add to group ────────────────────────────────────────────────────────
+      updates["groups/"   + groupId + "/members/" + requestUid] = {
+        uid:       requestUid,
+        name:      userData.name     || "",
+        photoUrl:  userData.photoUrl || "",
+        thumbUrl:  userData.thumbUrl || "",
+        role:      "member",
+        joinedAt:  Date.now()
+      };
+      updates["userGroups/"  + requestUid + "/" + groupId]        = true;
+      updates["users/"       + requestUid + "/groups/" + groupId] = true;
+      updates["groups/"      + groupId + "/unread/" + requestUid] = 0;
+
+      // System message — group chat mein dikhega
+      const sysMsgKey = db.ref("groupMessages/" + groupId).push().key;
+      updates["groupMessages/" + groupId + "/" + sysMsgKey] = {
+        senderId:  "system",
+        type:      "system",
+        text:      userName + " group mein join hua (admin ne approve kiya)",
+        timestamp: Date.now()
+      };
+
+      // Requester ko approve notification
+      const notifKey = db.ref("notifications/" + requestUid).push().key;
+      updates["notifications/" + requestUid + "/" + notifKey] = {
+        type:      "group_request_approved",
+        groupId,
+        groupName: group.name    || "",
+        groupIcon: group.iconUrl || "",
+        message:   group.name + " mein aapki join request approve ho gayi!",
+        timestamp: Date.now(),
+        read:      false
+      };
+
+      // FCM push — requester ko immediately batao
+      try {
+        if (userData.fcmToken) {
+          await admin.messaging().send({
+            token: userData.fcmToken,
+            data: {
+              type:      "group_request_approved",
+              groupId,
+              groupName: String(group.name    || ""),
+              groupIcon: String(group.iconUrl || "")
+            },
+            android: { priority: "high", ttl: 86400000 }
+          });
+        }
+      } catch (fcmErr) {
+        console.warn("[approveRequest] FCM send failed:", fcmErr.message);
+      }
+
+      await db.ref().update(updates);
+      console.log("[GroupApprove] " + adminUid + " approved " + requestUid + " for group " + groupId);
+      return res.json({ ok: true, action: "approved", groupName: group.name || "",
+        message: userName + " ko approve kar diya" });
+
+    } else {
+      // ── REJECT ──────────────────────────────────────────────────────────────
+
+      // Requester ko reject notification
+      const notifKey = db.ref("notifications/" + requestUid).push().key;
+      updates["notifications/" + requestUid + "/" + notifKey] = {
+        type:      "group_request_rejected",
+        groupId,
+        groupName: group.name || "",
+        message:   group.name + " mein aapki join request reject ho gayi.",
+        timestamp: Date.now(),
+        read:      false
+      };
+
+      // FCM push — reject bhi batao
+      try {
+        if (userData.fcmToken) {
+          await admin.messaging().send({
+            token: userData.fcmToken,
+            data: {
+              type:      "group_request_rejected",
+              groupId,
+              groupName: String(group.name || "")
+            },
+            android: { priority: "normal", ttl: 86400000 }
+          });
+        }
+      } catch (fcmErr) {
+        console.warn("[approveRequest] FCM reject notify failed:", fcmErr.message);
+      }
+
+      await db.ref().update(updates);
+      console.log("[GroupReject] " + adminUid + " rejected " + requestUid + " for group " + groupId);
+      return res.json({ ok: true, action: "rejected", groupName: group.name || "",
+        message: userName + " ki request reject kar di" });
+    }
+
+  } catch (e) {
+    console.error("[approveRequest] err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GROUP KICK — POST /group/kick
+// Admin kisi member ko group se nikaale
+// Body: { groupId, adminUid, targetUid, reason }
+// Response: { ok, kicked, groupName }
+// ══════════════════════════════════════════════════════════════════════════════
+app.post("/group/kick", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  const { groupId, adminUid, targetUid, reason = "" } = req.body || {};
+
+  if (!groupId)   return res.status(400).json({ error: "groupId required" });
+  if (!adminUid)  return res.status(400).json({ error: "adminUid required" });
+  if (!targetUid) return res.status(400).json({ error: "targetUid required" });
+  if (adminUid === targetUid)
+    return res.status(400).json({ error: "Aap khud ko kick nahi kar sakte" });
+
+  try {
+    const db = admin.database();
+
+    // ── Parallel fetch: group + kicked user data ──────────────────────────────
+    const [groupSnap, targetSnap] = await Promise.all([
+      db.ref("groups/" + groupId).once("value"),
+      db.ref("users/" + targetUid).once("value")
+    ]);
+
+    if (!groupSnap.exists())
+      return res.status(404).json({ error: "Group nahi mila" });
+
+    const group = groupSnap.val();
+
+    // ── Permission check ──────────────────────────────────────────────────────
+    const isOwner      = group.ownerId === adminUid;
+    const isAdmin      = group.admins  && group.admins[adminUid];
+    if (!isOwner && !isAdmin)
+      return res.status(403).json({ error: "Sirf group admin ya owner kick kar sakta hai" });
+
+    // ── Owner ko kick nahi kar sakte ─────────────────────────────────────────
+    if (targetUid === group.ownerId)
+      return res.status(403).json({ error: "Group owner ko kick nahi kar sakte" });
+
+    // ── Admin dusre admin ko kick nahi kar sakta (sirf owner kar sakta hai) ──
+    const targetIsAdmin = group.admins && group.admins[targetUid];
+    if (targetIsAdmin && !isOwner)
+      return res.status(403).json({ error: "Admin ko sirf group owner kick kar sakta hai" });
+
+    // ── Member hai ya nahi check ──────────────────────────────────────────────
+    if (!group.members || !group.members[targetUid])
+      return res.status(404).json({ error: "Ye user group ka member nahi hai" });
+
+    const targetData = targetSnap.val() || {};
+    const targetName = targetData.name || "User";
+    const updates    = {};
+
+    // ── Group se remove ───────────────────────────────────────────────────────
+    updates["groups/"    + groupId + "/members/" + targetUid]  = null;
+    updates["groups/"    + groupId + "/admins/"  + targetUid]  = null;
+    updates["groups/"    + groupId + "/unread/"  + targetUid]  = null;
+    updates["userGroups/"  + targetUid + "/" + groupId]        = null;
+    updates["users/"       + targetUid + "/groups/" + groupId] = null;
+
+    // ── Kick log Firebase mein save karo ─────────────────────────────────────
+    updates["groupKicks/" + groupId + "/" + targetUid] = {
+      kickedBy:  adminUid,
+      kickedAt:  Date.now(),
+      reason:    reason || "No reason given"
+    };
+
+    // ── System message — group chat mein dikhega ──────────────────────────────
+    const sysMsgKey = db.ref("groupMessages/" + groupId).push().key;
+    updates["groupMessages/" + groupId + "/" + sysMsgKey] = {
+      senderId:  "system",
+      type:      "system",
+      text:      targetName + " ko group se remove kar diya gaya",
+      timestamp: Date.now()
+    };
+
+    // ── Kicked user ko Firebase notification ──────────────────────────────────
+    const notifKey = db.ref("notifications/" + targetUid).push().key;
+    updates["notifications/" + targetUid + "/" + notifKey] = {
+      type:      "group_kicked",
+      groupId,
+      groupName: group.name    || "",
+      groupIcon: group.iconUrl || "",
+      reason:    reason        || "",
+      message:   "Aapko " + (group.name || "group") + " se remove kar diya gaya",
+      timestamp: Date.now(),
+      read:      false
+    };
+
+    await db.ref().update(updates);
+
+    // ── FCM push to kicked user ───────────────────────────────────────────────
+    if (targetData.fcmToken) {
+      try {
+        await admin.messaging().send({
+          token: targetData.fcmToken,
+          data: {
+            type:      "group_kicked",
+            groupId,
+            groupName: String(group.name    || ""),
+            groupIcon: String(group.iconUrl || ""),
+            reason:    String(reason        || "")
+          },
+          android: { priority: "high", ttl: 86400000 }
+        });
+      } catch (fcmErr) {
+        console.warn("[GroupKick] FCM send failed:", fcmErr.message);
+      }
+    }
+
+    console.log("[GroupKick] " + adminUid + " kicked " + targetUid + " from " + groupId);
+    res.json({
+      ok:        true,
+      kicked:    true,
+      groupName: group.name || "",
+      message:   targetName + " ko group se remove kar diya"
+    });
+
+  } catch (e) {
+    console.error("[group/kick] err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Start server + Render keep-alive
 // ══════════════════════════════════════════════════════════════════════════════
 const PORT = process.env.PORT || 3000;
