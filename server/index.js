@@ -1630,6 +1630,273 @@ app.get("/search",          (req, res) => {
   )));
 });
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GROUP INVITE VERIFY — POST /group/verifyInvite
+// Android JoinGroupActivity se call hoti hai
+// Body: { groupId, inviteToken, uid }
+// Response: { ok, joined, groupName } ya { ok, pendingApproval, groupName }
+// ══════════════════════════════════════════════════════════════════════════════
+app.post("/group/verifyInvite", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  const { groupId, inviteToken, uid } = req.body || {};
+  if (!groupId || !inviteToken || !uid)
+    return res.status(400).json({ error: "groupId, inviteToken aur uid zaroori hain" });
+
+  try {
+    const db        = admin.database();
+    const groupSnap = await db.ref("groups/" + groupId).once("value");
+
+    if (!groupSnap.exists())
+      return res.status(404).json({ error: "Group nahi mila" });
+
+    const group = groupSnap.val();
+
+    // ── Token match karo ─────────────────────────────────────────────────────
+    if (group.inviteToken !== inviteToken)
+      return res.status(403).json({ error: "Invite link galat ya expire ho gayi" });
+
+    // ── Pehle se member? ─────────────────────────────────────────────────────
+    if (group.members && group.members[uid])
+      return res.json({ ok: true, alreadyMember: true, groupName: group.name || "" });
+
+    // ── Member limit check ───────────────────────────────────────────────────
+    const memberCount = group.members ? Object.keys(group.members).length : 0;
+    const limit       = group.memberLimit || 256;
+    if (memberCount >= limit)
+      return res.status(429).json({ error: "Group full hai — max " + limit + " members" });
+
+    // ── Approval required? ───────────────────────────────────────────────────
+    if (group.approvalRequired) {
+      const userSnap = await db.ref("users/" + uid).once("value");
+      const userData = userSnap.val() || {};
+      await db.ref("groupJoinRequests/" + groupId + "/" + uid).set({
+        uid,
+        name:      userData.name     || "",
+        photoUrl:  userData.photoUrl || "",
+        timestamp: Date.now(),
+        status:    "pending"
+      });
+      // Admin ko notification
+      const adminUids = group.admins ? Object.keys(group.admins) : [group.ownerId];
+      const notifWrites = {};
+      for (const adminUid of adminUids) {
+        if (!adminUid) continue;
+        const key = db.ref("notifications/" + adminUid).push().key;
+        notifWrites["notifications/" + adminUid + "/" + key] = {
+          type: "group_join_request", groupId,
+          groupName: group.name || "",
+          fromUid: uid, fromName: userData.name || "",
+          timestamp: Date.now(), read: false
+        };
+      }
+      if (Object.keys(notifWrites).length) await db.ref().update(notifWrites);
+      return res.json({ ok: true, pendingApproval: true, groupName: group.name || "" });
+    }
+
+    // ── Atomic join ──────────────────────────────────────────────────────────
+    const userSnap = await db.ref("users/" + uid).once("value");
+    const userData = userSnap.val() || {};
+    const updates  = {};
+
+    updates["groups/"    + groupId + "/members/" + uid]  = {
+      uid, name: userData.name || "", photoUrl: userData.photoUrl || "",
+      thumbUrl: userData.thumbUrl || "", role: "member", joinedAt: Date.now()
+    };
+    updates["userGroups/"  + uid + "/" + groupId]        = true;
+    updates["users/"       + uid + "/groups/" + groupId] = true;
+    updates["groups/"      + groupId + "/unread/" + uid] = 0;
+
+    // System message
+    const sysMsgKey = db.ref("groupMessages/" + groupId).push().key;
+    updates["groupMessages/" + groupId + "/" + sysMsgKey] = {
+      senderId: "system", type: "system",
+      text: (userData.name || "Koi") + " invite link se join hua",
+      timestamp: Date.now()
+    };
+
+    await db.ref().update(updates);
+    console.log("[GroupInvite] " + uid + " joined group " + groupId);
+    res.json({ ok: true, joined: true, groupId, groupName: group.name || "", groupIcon: group.iconUrl || "" });
+
+  } catch (e) {
+    console.error("[verifyInvite] err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ANTI-SPAM CHECK — POST /spam/check
+// Android ChatActivity / GroupChatActivity message bhejna se PEHLE call karo
+// Body: { senderUid, chatId, text, isGroup }
+// Response: { ok:true, allowed:true } ya { ok:true, allowed:false, reason, banUntil }
+// ══════════════════════════════════════════════════════════════════════════════
+
+// In-memory rate store (server restart pe reset hota hai — production mein Redis use karo)
+const _spamStore = {};   // { "uid_chatId": { count, windowStart, lastText } }
+const _banStore  = {};   // { uid: { until, reason } }
+
+app.post("/spam/check", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  const { senderUid, chatId, text = "", isGroup = false } = req.body || {};
+  if (!senderUid) return res.status(400).json({ error: "senderUid required" });
+
+  const now       = Date.now();
+  const windowMs  = 60 * 1000;           // 60 second window
+  const softLimit = isGroup ? 20 : 30;   // group mein 20, private mein 30
+  const hardLimit = isGroup ? 35 : 50;   // ban threshold
+
+  try {
+    const db = admin.database();
+
+    // ── Active ban check ─────────────────────────────────────────────────────
+    const ban = _banStore[senderUid];
+    if (ban && ban.until > now) {
+      const remainSec = Math.ceil((ban.until - now) / 1000);
+      return res.json({ ok: true, allowed: false, reason: ban.reason,
+        banUntil: ban.until, remainSec, message: remainSec + " second baad try karo" });
+    } else if (ban) {
+      delete _banStore[senderUid]; // ban expire
+    }
+
+    // ── Rate window ──────────────────────────────────────────────────────────
+    const key      = senderUid + "_" + (chatId || "global");
+    let   entry    = _spamStore[key] || { count: 0, windowStart: now, lastText: "" };
+
+    if (now - entry.windowStart > windowMs) {
+      entry = { count: 0, windowStart: now, lastText: entry.lastText };
+    }
+    entry.count++;
+
+    // ── Duplicate message penalty ────────────────────────────────────────────
+    if (text && text === entry.lastText && text.length > 5) {
+      entry.count += 5;
+    }
+
+    // ── Link spam penalty ─────────────────────────────────────────────────────
+    const linkCount = (text.match(/(https?:\/\/|www\.)/gi) || []).length;
+    if (linkCount >= 3) entry.count += 10;
+
+    entry.lastText       = text;
+    _spamStore[key]      = entry;
+
+    // ── Hard limit — BAN ─────────────────────────────────────────────────────
+    if (entry.count >= hardLimit) {
+      const banMs = 10 * 60 * 1000; // 10 minute
+      _banStore[senderUid] = { until: now + banMs, reason: "rate_limit" };
+      delete _spamStore[key];
+
+      // Firebase mein bhi save karo
+      try {
+        await db.ref("_spam_bans/" + senderUid).set({
+          until: now + banMs, reason: "rate_limit", bannedAt: now
+        });
+        const wKey = db.ref("notifications/" + senderUid).push().key;
+        await db.ref("notifications/" + senderUid + "/" + wKey).set({
+          type: "spam_warning",
+          message: "Bahut zyada messages! 10 minute ke liye blocked.",
+          timestamp: now, read: false
+        });
+      } catch (_) {}
+
+      console.warn("[AntiSpam] BANNED", senderUid, "count:", entry.count);
+      return res.json({ ok: true, allowed: false, reason: "rate_limit",
+        banUntil: now + banMs, remainSec: 600,
+        message: "Bahut zyada messages bheje. 10 minute wait karo." });
+    }
+
+    // ── Soft limit — WARN ────────────────────────────────────────────────────
+    if (entry.count >= softLimit) {
+      console.warn("[AntiSpam] WARN", senderUid, "count:", entry.count);
+      return res.json({ ok: true, allowed: true, warning: true,
+        message: "Aap bahut tezi se messages bhej rahe ho. Dheere karo." });
+    }
+
+    res.json({ ok: true, allowed: true });
+
+  } catch (e) {
+    console.error("[spam/check] err:", e.message);
+    // Spam check fail hone pe allow karo (fail-open)
+    res.json({ ok: true, allowed: true });
+  }
+});
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FCM TOKEN CLEANUP — GET /fcm/cleanup
+// Render cron ya manual call se chalao — expired tokens hata deta hai
+// Render Cron Job URL: https://your-server.onrender.com/fcm/cleanup
+// Header: { "x-cron-secret": process.env.CRON_SECRET }
+// ══════════════════════════════════════════════════════════════════════════════
+app.get("/fcm/cleanup", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  // Secret check — sirf authorized caller
+  const secret = process.env.CRON_SECRET;
+  if (secret && req.headers["x-cron-secret"] !== secret)
+    return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const db       = admin.database();
+    const usersSnap = await db.ref("users").orderByChild("fcmToken")
+      .limitToFirst(500).once("value");
+
+    if (!usersSnap.exists()) return res.json({ ok: true, removed: 0, checked: 0 });
+
+    const tokenUidMap = {};
+    usersSnap.forEach(snap => {
+      const token = snap.val()?.fcmToken;
+      if (token) tokenUidMap[token] = snap.key;
+    });
+
+    const tokens = Object.keys(tokenUidMap);
+    if (!tokens.length) return res.json({ ok: true, removed: 0, checked: 0 });
+
+    // Batch ping all tokens (500 limit per FCM request)
+    const batchSize = 500;
+    let removed = 0;
+
+    for (let i = 0; i < tokens.length; i += batchSize) {
+      const batch = tokens.slice(i, i + batchSize);
+      try {
+        const result = await admin.messaging().sendEachForMulticast({
+          tokens: batch,
+          data: { type: "ping" }
+        });
+        const removals = [];
+        result.responses.forEach((resp, idx) => {
+          if (!resp.success) {
+            const code = resp.error?.code;
+            if (code === "messaging/registration-token-not-registered" ||
+                code === "messaging/invalid-registration-token") {
+              const uid = tokenUidMap[batch[idx]];
+              if (uid) removals.push(db.ref("users/" + uid + "/fcmToken").remove());
+              removed++;
+            }
+          }
+        });
+        await Promise.allSettled(removals);
+      } catch (batchErr) {
+        console.warn("[FCM Cleanup] batch err:", batchErr.message);
+      }
+    }
+
+    console.log("[FCM Cleanup] Done — removed:", removed, "checked:", tokens.length);
+    res.json({ ok: true, removed, checked: tokens.length });
+
+  } catch (e) {
+    console.error("[fcm/cleanup] err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Start server + Render keep-alive
 // ══════════════════════════════════════════════════════════════════════════════
