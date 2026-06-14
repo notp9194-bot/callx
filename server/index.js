@@ -652,9 +652,7 @@ app.post("/notify", async (req, res) => {
     callerPhoto = "", callerUid = "", callerName = "",
     isVideo = false, callId = "",
     // Feature-3: missed call count (Android locally tracked — server just passes through to FCM)
-    missedCount = "1",
-    // Live feature: liveId (sent by PushNotify.notifyLive)
-    liveId = ""
+    missedCount = "1"
   } = req.body || {};
   if (!toUid) return res.status(400).json({ error: "toUid required" });
 
@@ -663,8 +661,7 @@ app.post("/notify", async (req, res) => {
   const isUnblockNotify  = (type === "unblock_notify");
   const isStatusReply = (type === "status_reply");
   const isMissedCall  = (type === "call_missed" || type === "missed_call"); // FIX-A: PushNotify sends "missed_call", legacy was "call_missed"
-  const isLiveInvite  = (type === "live_invite");
-  const skipBlockChecks   = isStatusReply || isMissedCall || isSpecialRequest || isUnblockNotify || isLiveInvite;
+  const skipBlockChecks   = isStatusReply || isMissedCall || isSpecialRequest || isUnblockNotify;
 
   try {
     const db = admin.database();
@@ -778,8 +775,6 @@ app.post("/notify", async (req, res) => {
         history:      history,
         myThumb:      myThumb,
         ...(isCall && text ? { callId: String(text) } : {}),
-        // Live feature: liveId — client reads this to open LiveViewerActivity
-        ...(isLiveInvite ? { liveId: String(liveId || "") } : {}),
         // FIX-B: missed_call fields — client reads callerPhoto/callerUid/callerName/isVideo
         ...(isMissedCall ? {
           callerPhoto:    String(callerPhoto || fromPhoto || ""),
@@ -799,8 +794,7 @@ app.post("/notify", async (req, res) => {
       android: {
         priority: (isMuted && !isCall && !isStatusReply) ? "normal" : "high",
         ...(isCall ? { ttl: 30000 } : {}),
-        ...(isMissedCall ? { ttl: 86400000 } : {}),  // FIX-B: missed call 24h TTL (background/killed delivery)
-        ...(isLiveInvite ? { ttl: 3600000 } : {})    // Live invite: 1h TTL
+        ...(isMissedCall ? { ttl: 86400000 } : {})  // FIX-B: missed call 24h TTL (background/killed delivery)
       }
     };
 
@@ -830,7 +824,9 @@ const VALID_REEL_TYPES = new Set([
   "weekly_digest", "collab_live",
   // Feature-3 (missed call grouping) se related nahi — ye repost notify fix hai:
   // PushNotify.notifyReelRepost() type="repost" bhejta hai — pehle 400 error aata tha
-  "repost"
+  "repost",
+  // Multi-Duet invite
+  "multi_duet_invite"
 ]);
 
 app.post("/notify/reel", async (req, res) => {
@@ -839,7 +835,8 @@ app.post("/notify/reel", async (req, res) => {
 
   const {
     toUid, fromUid, fromName, fromPhoto,
-    reelId, reelThumb, type, commentText, commentId
+    reelId, reelThumb, type, commentText, commentId,
+    sessionId   // multi_duet_invite ke liye extra field
   } = req.body || {};
 
   if (!toUid)  return res.status(400).json({ error: "toUid required" });
@@ -879,7 +876,8 @@ app.post("/notify/reel", async (req, res) => {
         reel_id:         String(reelId      || ""),
         reel_thumb:      String(reelThumb   || ""),
         comment_text:    String(commentText || ""),
-        comment_id:      String(commentId   || "")
+        comment_id:      String(commentId   || ""),
+        session_id:      String(sessionId   || "")   // multi_duet_invite
       },
       android: { priority: "high", ttl: 86400000 }
     });
