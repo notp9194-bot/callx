@@ -826,7 +826,11 @@ const VALID_REEL_TYPES = new Set([
   // PushNotify.notifyReelRepost() type="repost" bhejta hai — pehle 400 error aata tha
   "repost",
   // Multi-Duet invite
-  "multi_duet_invite"
+  "multi_duet_invite",
+  // Collab Repost cross-device push
+  "collab_repost_invite",
+  "collab_repost_accepted",
+  "collab_repost_declined"
 ]);
 
 app.post("/notify/reel", async (req, res) => {
@@ -836,7 +840,9 @@ app.post("/notify/reel", async (req, res) => {
   const {
     toUid, fromUid, fromName, fromPhoto,
     reelId, reelThumb, type, commentText, commentId,
-    sessionId   // multi_duet_invite ke liye extra field
+    sessionId,      // multi_duet_invite ke liye extra field
+    collabRepostId, // Collab Repost: invite/accepted/declined ke liye (CollabRepostNotificationHelper isi key se padhta h)
+    newReelId       // Collab Repost: accepted ke baad ka naya reel id
   } = req.body || {};
 
   if (!toUid)  return res.status(400).json({ error: "toUid required" });
@@ -877,7 +883,14 @@ app.post("/notify/reel", async (req, res) => {
         reel_thumb:      String(reelThumb   || ""),
         comment_text:    String(commentText || ""),
         comment_id:      String(commentId   || ""),
-        session_id:      String(sessionId   || "")   // multi_duet_invite
+        session_id:      String(sessionId   || ""),  // multi_duet_invite
+        // Collab Repost — keys camelCase rakhi h kyunki ReelFCMNotificationHandler
+        // exactly "collabRepostId" / "newReelId" string se hi padhta h (get(data, "collabRepostId")).
+        // Pehle ye fields yaha forward nahi ho rahe the, isliye collab repost push
+        // aa to jaati thi but collabId/newReelId empty aate the (notif id clash +
+        // "highlight_collab_id" deep-link kabhi kaam nahi karta tha).
+        collabRepostId:  String(collabRepostId || ""),
+        newReelId:       String(newReelId      || "")
       },
       android: { priority: "high", ttl: 86400000 }
     });
