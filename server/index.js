@@ -630,6 +630,7 @@ function getHistoryJson(histSnap, receiverUid) {
       else if (type === "audio") t = "\uD83C\uDFA4 Voice message";
       else if (type === "file" ) t = "\uD83D\uDCCE File";
       else if (type === "pdf"  ) t = "\uD83D\uDCC4 PDF document";
+      else if (type === "reel_share" || type === "reel_link") t = "\uD83C\uDFAC Reel";
       else t = "Message";
     }
     items.push({ t, ts, me: sid === receiverUid });
