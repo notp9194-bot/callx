@@ -652,7 +652,11 @@ app.post("/notify", async (req, res) => {
     callerPhoto = "", callerUid = "", callerName = "",
     isVideo = false, callId = "",
     // Feature-3: missed call count (Android locally tracked — server just passes through to FCM)
-    missedCount = "1"
+    missedCount = "1",
+    // Broadcast List: true when this message was fanned out via a broadcast
+    // list (BroadcastDeliveryWorker) — passed through so the recipient's
+    // notification can show a "📢 Broadcast" indicator, same as WhatsApp.
+    broadcast = false
   } = req.body || {};
   if (!toUid) return res.status(400).json({ error: "toUid required" });
 
@@ -775,6 +779,7 @@ app.post("/notify", async (req, res) => {
         muted:        isMuted   ? "1" : "0",
         history:      history,
         myThumb:      myThumb,
+        broadcast:    (broadcast === true || broadcast === "true") ? "1" : "0",
         ...(isCall && text ? { callId: String(text) } : {}),
         // FIX-B: missed_call fields — client reads callerPhoto/callerUid/callerName/isVideo
         ...(isMissedCall ? {
