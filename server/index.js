@@ -630,7 +630,6 @@ function getHistoryJson(histSnap, receiverUid) {
       else if (type === "audio") t = "\uD83C\uDFA4 Voice message";
       else if (type === "file" ) t = "\uD83D\uDCCE File";
       else if (type === "pdf"  ) t = "\uD83D\uDCC4 PDF document";
-      else if (type === "reel_share" || type === "reel_link") t = "\uD83C\uDFAC Reel";
       else t = "Message";
     }
     items.push({ t, ts, me: sid === receiverUid });
@@ -1439,6 +1438,69 @@ app.post("/notify/status_reaction", async (req, res) => {
     res.json({ ok: true, id: r });
   } catch (e) {
     console.error("status_reaction notify err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Notify broadcast delivery — POST /notify/broadcast
+// Called by PushNotify.notifyBroadcastComplete() from BroadcastDeliveryWorker
+// after a broadcast list fan-out finishes (success OR failure).
+//
+// Purpose: sender-side, background/killed-safe confirmation push.
+//   • BroadcastDeliveryWorker runs via WorkManager and already shows a LOCAL
+//     notification directly on the sending device the instant it finishes —
+//     that covers the common case with zero network round-trip.
+//   • This endpoint additionally pushes an FCM "broadcast_message" data
+//     message to the sender's account so that ANY other signed-in device
+//     (tablet, secondary phone) also gets the delivery summary even if that
+//     device was in the background or fully killed — same high-priority
+//     data-only pattern already used for reel/x/youtube/status notifications.
+//
+// Payload: toUid (sender uid), listId, listName, delivered, total, skipped,
+//          status ("sent"|"failed"), msgType, lastMessage
+// Android: type="broadcast_message" → CallxMessagingService →
+//          BroadcastFCMHandler.handle() → opens BroadcastChatActivity
+// ══════════════════════════════════════════════════════════════════════════════
+app.post("/notify/broadcast", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  const {
+    toUid, listId, listName = "Broadcast",
+    delivered = 0, total = 0, skipped = 0,
+    status = "sent", msgType = "text", lastMessage = ""
+  } = req.body || {};
+  if (!toUid)  return res.status(400).json({ error: "toUid required" });
+  if (!listId) return res.status(400).json({ error: "listId required" });
+
+  try {
+    const db   = admin.database();
+    const snap = await db.ref("users/" + toUid).once("value");
+    const user = snap.val() || {};
+    if (!user.fcmToken) return res.status(404).json({ error: "no token" });
+
+    const r = await admin.messaging().send({
+      token: user.fcmToken,
+      data: {
+        type:        "broadcast_message",
+        list_id:     String(listId),
+        list_name:   String(listName),
+        delivered:   String(delivered),
+        total:       String(total),
+        skipped:     String(skipped),
+        status:      String(status),
+        msg_type:    String(msgType),
+        last_message:String(lastMessage || "")
+      },
+      // Self-notify, background/killed-safe: high priority so FCM wakes the
+      // app to post the notification even if the process was killed, with a
+      // generous TTL since it's an informational summary, not time-critical.
+      android: { priority: "high", ttl: 24 * 60 * 60 * 1000 }
+    });
+    res.json({ ok: true, id: r });
+  } catch (e) {
+    console.error("notify/broadcast err:", e.message);
     res.status(500).json({ error: e.message });
   }
 });
