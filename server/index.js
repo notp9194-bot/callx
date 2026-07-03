@@ -780,6 +780,12 @@ app.post("/notify", async (req, res) => {
         history:      history,
         myThumb:      myThumb,
         broadcast:    (broadcast === true || broadcast === "true") ? "1" : "0",
+        // FIX: media (image/audio/video/file) FCM se aane ke baad client
+        // KABHI auto-download nahi karega — sirf mediaUrl DB mein save
+        // hoga aur user manual tap karke download karega (WhatsApp jaisa).
+        // "0" = auto-download mat karo. Client (CallxMessagingService)
+        // is flag ko explicit safety-signal ki tarah read karta hai.
+        autoDownload: "0",
         ...(isCall && text ? { callId: String(text) } : {}),
         // FIX-B: missed_call fields — client reads callerPhoto/callerUid/callerName/isVideo
         ...(isMissedCall ? {
@@ -1275,7 +1281,10 @@ app.post("/notify/group", async (req, res) => {
             muted:        isMuted ? "1" : "0",
             mention:      mentionedUids.has(uid) ? "true" : "false",
             priority:     "false",
-            history:      history
+            history:      history,
+            // FIX: same as /notify — group media bhi auto-download nahi
+            // hoga, sirf manual tap se.
+            autoDownload: "0"
           },
           android: {
             priority:    isMuted ? "normal" : "high",
