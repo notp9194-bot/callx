@@ -754,15 +754,26 @@ app.post("/notify", async (req, res) => {
     }
 
     let fromMobile = "", fromPhoto = "", fromThumb = "", fromLastSeen = "0";
+    // HUN-FIX: reaction (and other) pushes were showing "Someone" because the
+    // Android side sometimes has no reliable in-memory display name at the
+    // moment it fires (e.g. ChatReactionController reacting from a chat that
+    // was opened via a notification tap, where "currentName" extra isn't
+    // always passed through). Server already fetches senderSnap for
+    // fromMobile/fromPhoto — reuse it as an authoritative fallback for the
+    // name too, so the notification never has to guess.
+    let dbFromName = "";
     if (senderSnap) {
       const f   = senderSnap.val() || {};
       fromMobile   = String(f.mobile   || f.callxId || "");
       fromPhoto    = String(f.photoUrl || req.body.fromPhoto || "");
       fromThumb    = String(f.thumbUrl || "");
       fromLastSeen = String(f.lastSeen || 0);
+      dbFromName   = String(f.name || f.displayName || "");
     } else if (req.body.fromPhoto) {
       fromPhoto = String(req.body.fromPhoto);
     }
+    const finalFromName = (fromName && String(fromName).trim())
+      ? String(fromName) : dbFromName;
 
     // ── Feature-4: Missed call — server se caller ka lastSeen + online fetch karo ──
     // Android side async Firebase fetch karta hai, but server se bhi pass karo
@@ -787,7 +798,7 @@ app.post("/notify", async (req, res) => {
       data: {
         type:         String(type      || "message"),
         fromUid:      String(fromUid   || ""),
-        fromName:     String(fromName  || ""),
+        fromName:     finalFromName,
         fromMobile:   fromMobile,
         fromPhoto:    fromPhoto,
         fromThumb:    fromThumb,
