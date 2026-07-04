@@ -656,7 +656,13 @@ app.post("/notify", async (req, res) => {
     // Broadcast List: true when this message was fanned out via a broadcast
     // list (BroadcastDeliveryWorker) — passed through so the recipient's
     // notification can show a "📢 Broadcast" indicator, same as WhatsApp.
-    broadcast = false
+    broadcast = false,
+    // Emoji Reaction (1:1 + group, background/killed-safe) — sent by
+    // PushNotify.notifyMessageReaction() / notifyGroupMessageReaction().
+    // groupId/groupName only present for group_message_reaction; this push
+    // still targets a single toUid (the reacted-to message's author), not
+    // a group fan-out — see /notify/group for the fan-out pattern.
+    reaction = "", groupId = "", groupName = ""
   } = req.body || {};
   if (!toUid) return res.status(400).json({ error: "toUid required" });
 
@@ -666,6 +672,7 @@ app.post("/notify", async (req, res) => {
   const isStatusReply = (type === "status_reply");
   const isMissedCall  = (type === "call_missed" || type === "missed_call"); // FIX-A: PushNotify sends "missed_call", legacy was "call_missed"
   const isViewOnceViewed = (type === "view_once_viewed"); // View Once: silent push to sender when receiver opens
+  const isMessageReaction = (type === "message_reaction" || type === "group_message_reaction");
   const skipBlockChecks   = isStatusReply || isMissedCall || isSpecialRequest || isUnblockNotify || isViewOnceViewed;
 
   try {
@@ -780,12 +787,14 @@ app.post("/notify", async (req, res) => {
         history:      history,
         myThumb:      myThumb,
         broadcast:    (broadcast === true || broadcast === "true") ? "1" : "0",
-        // FIX: media (image/audio/video/file) FCM se aane ke baad client
-        // KABHI auto-download nahi karega — sirf mediaUrl DB mein save
-        // hoga aur user manual tap karke download karega (WhatsApp jaisa).
-        // "0" = auto-download mat karo. Client (CallxMessagingService)
-        // is flag ko explicit safety-signal ki tarah read karta hai.
-        autoDownload: "0",
+        // Emoji Reaction passthrough — see PushNotify.notifyMessageReaction()
+        // / notifyGroupMessageReaction(). groupId/groupName are only set for
+        // group_message_reaction (message_reaction leaves them "").
+        ...(isMessageReaction ? {
+          reaction:  String(reaction  || "❤️"),
+          groupId:   String(groupId   || ""),
+          groupName: String(groupName || "")
+        } : {}),
         ...(isCall && text ? { callId: String(text) } : {}),
         // FIX-B: missed_call fields — client reads callerPhoto/callerUid/callerName/isVideo
         ...(isMissedCall ? {
@@ -1281,10 +1290,7 @@ app.post("/notify/group", async (req, res) => {
             muted:        isMuted ? "1" : "0",
             mention:      mentionedUids.has(uid) ? "true" : "false",
             priority:     "false",
-            history:      history,
-            // FIX: same as /notify — group media bhi auto-download nahi
-            // hoga, sirf manual tap se.
-            autoDownload: "0"
+            history:      history
           },
           android: {
             priority:    isMuted ? "normal" : "high",
