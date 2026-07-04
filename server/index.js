@@ -808,7 +808,10 @@ app.post("/notify", async (req, res) => {
         ...(isMessageReaction ? {
           reaction:  String(reaction  || "❤️"),
           groupId:   String(groupId   || ""),
-          groupName: String(groupName || "")
+          groupName: String(groupName || ""),
+          // HUN-FIX: reaction time, so Android can setWhen() on the
+          // notification and show a real timestamp instead of "now".
+          ts:        String(Date.now())
         } : {}),
         ...(isCall && text ? { callId: String(text) } : {}),
         // FIX-B: missed_call fields — client reads callerPhoto/callerUid/callerName/isVideo
