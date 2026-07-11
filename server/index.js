@@ -135,74 +135,109 @@ app.get("/ping", (req, res) =>
   res.json({ ok: true, time: Date.now() }));
 
 // ══════════════════════════════════════════════════════════════════════════════
-// EMOJI PACKS (RLottie empty-chat welcome animation)
+// Emoji / lottie pack manifest — client-side gaps #1/#2/#5 fix pass
+//
+//   /emoji-assets/<id>.json      — plain JSON, back-compat / debug only
+//   /emoji-assets-gz/<id>.json.gz — TGS-style gzip transport (gap #2).
+//     Compressed ONCE on first request per file (cached on disk at
+//     emoji-assets-gz/), then served as octet-stream. Deliberately NOT
+//     using the Content-Encoding:gzip header — that would make OkHttp on
+//     the client transparently un-gzip the body for us, defeating the
+//     client's own manual GZIPInputStream step and breaking the sha256
+//     check (which is defined over the DEcompressed bytes). Treat this
+//     endpoint's bytes as an opaque compressed blob, same as Telegram
+//     treats a .tgs file.
+//   /api/emoji-packs/manifest    — list of packs + integrity hashes.
+//     Sends an ETag; honours If-None-Match with a 304 (gap #5) so a client
+//     that already has the current manifest doesn't re-download/re-parse
+//     it on every chat-open sync trigger.
 // ══════════════════════════════════════════════════════════════════════════════
-// Android side: EmojiManifestRepository fetches GET /api/emoji-packs/manifest,
-// EmojiPackDownloadWorker then downloads whichever files aren't cached yet
-// from GET /emoji-assets/<file>.json.
-//
-// How to add a new emoji pack (no app redeploy needed, only the server):
-//   1. Drop the lottie JSON in emoji_assets/, e.g. emoji_assets/confetti.json
-//      (keep it small — ~30KB budget, Android rejects anything over 40KB)
-//   2. Add an entry to emoji_assets/registry.json:
-//      { "id": "confetti", "file": "confetti.json", "isDefault": false }
-//   3. That's it — sha256 + file size are computed live from disk on every
-//      manifest request, so there's no hash to hand-compute or keep in sync.
-//
-// The "wave_default" entry (isDefault: true) is intentionally listed even
-// though it ships inside the APK itself — Android's manifest parser just
-// skips downloading anything marked isDefault. This lets the server one day
-// push an *updated* default without an app release (Android checks its own
-// disk cache first, falls back to the bundled asset only if nothing's cached).
-const emojiFs   = require("fs");
-const emojiPath = require("path");
-const EMOJI_ASSETS_DIR = emojiPath.join(__dirname, "emoji_assets");
-const EMOJI_REGISTRY_FILE = emojiPath.join(EMOJI_ASSETS_DIR, "registry.json");
-const EMOJI_MAX_BYTES = 40 * 1024; // matches EmojiPackDownloadWorker's budget check
+{
+  const fsE   = require("fs");
+  const pathE = require("path");
+  const zlib  = require("zlib");
 
-app.use("/emoji-assets", express.static(EMOJI_ASSETS_DIR, {
-  maxAge: "1d",
-  setHeaders: (res) => res.setHeader("Content-Type", "application/json; charset=utf-8")
-}));
+  const EMOJI_SRC_DIR = pathE.join(__dirname, "emoji-assets");
+  const EMOJI_GZ_DIR   = pathE.join(__dirname, "emoji-assets-gz");
+  if (!fsE.existsSync(EMOJI_SRC_DIR)) fsE.mkdirSync(EMOJI_SRC_DIR, { recursive: true });
+  if (!fsE.existsSync(EMOJI_GZ_DIR)) fsE.mkdirSync(EMOJI_GZ_DIR, { recursive: true });
 
-app.get("/api/emoji-packs/manifest", (req, res) => {
-  try {
-    if (!emojiFs.existsSync(EMOJI_REGISTRY_FILE)) {
-      return res.json({ version: 1, emojis: [] });
-    }
-    const registry = JSON.parse(emojiFs.readFileSync(EMOJI_REGISTRY_FILE, "utf8"));
-    const emojis = [];
-
-    for (const entry of registry) {
-      const filePath = emojiPath.join(EMOJI_ASSETS_DIR, entry.file);
-      if (!emojiFs.existsSync(filePath)) {
-        console.warn(`[emoji-packs] registry references missing file: ${entry.file}`);
-        continue;
-      }
-      const data = emojiFs.readFileSync(filePath);
-      if (data.length > EMOJI_MAX_BYTES && !entry.isDefault) {
-        console.warn(`[emoji-packs] ${entry.file} exceeds ${EMOJI_MAX_BYTES}B budget, excluded`);
-        continue;
-      }
-      const sha256 = crypto.createHash("sha256").update(data).digest("hex");
-      emojis.push({
-        id: entry.id,
-        url: `/emoji-assets/${entry.file}`,
-        sha256,
-        sizeBytes: data.length,
-        isDefault: !!entry.isDefault
-      });
-    }
-
-    // version = registry mtime, so Android can cheaply tell "did anything
-    // change" without diffing the whole array if we ever add that optimization
-    const stat = emojiFs.statSync(EMOJI_REGISTRY_FILE);
-    res.json({ version: Math.floor(stat.mtimeMs), emojis });
-  } catch (e) {
-    console.error("[emoji-packs] manifest error:", e.message);
-    res.status(500).json({ version: 0, emojis: [] });
+  function buildManifest() {
+    const files = fsE.readdirSync(EMOJI_SRC_DIR).filter(f => f.endsWith(".json"));
+    let maxMtimeMs = 0;
+    const emojis = files.map(fname => {
+      const full = pathE.join(EMOJI_SRC_DIR, fname);
+      const stat = fsE.statSync(full);
+      if (stat.mtimeMs > maxMtimeMs) maxMtimeMs = stat.mtimeMs;
+      const buf = fsE.readFileSync(full);
+      const id = fname.replace(/\.json$/, "");
+      return {
+        id,
+        url: `/emoji-assets/${fname}`,
+        gzUrl: `/emoji-assets-gz/${fname}.gz`,
+        sha256: crypto.createHash("sha256").update(buf).digest("hex"),
+        sizeBytes: buf.length,
+        isDefault: id === "wave_default"
+      };
+    });
+    // Deterministic version/ETag from file count + newest mtime — changes
+    // whenever a file is added/updated, stable otherwise.
+    const version = Math.round(maxMtimeMs) + files.length;
+    const etag = '"' + crypto.createHash("sha1")
+      .update(files.sort().join(",") + ":" + version).digest("hex") + '"';
+    return { manifest: { version, emojis }, etag };
   }
-});
+
+  app.get("/api/emoji-packs/manifest", (req, res) => {
+    try {
+      const { manifest, etag } = buildManifest();
+      res.set("ETag", etag);
+      res.set("Cache-Control", "no-cache"); // always revalidate via If-None-Match
+      if (req.headers["if-none-match"] === etag) {
+        return res.status(304).end();
+      }
+      res.json(manifest);
+    } catch (e) {
+      console.warn("[emoji-packs] manifest build failed:", e.message);
+      res.status(500).json({ ok: false, error: "manifest_failed" });
+    }
+  });
+
+  // Plain JSON — back-compat / debugging, not what the worker downloads by default.
+  app.get("/emoji-assets/:file", (req, res) => {
+    const file = pathE.basename(req.params.file); // no path traversal
+    const full = pathE.join(EMOJI_SRC_DIR, file);
+    if (!fsE.existsSync(full)) return res.status(404).end();
+    res.type("application/json").sendFile(full);
+  });
+
+  // Gzip-compressed variant — lazily compressed once, cached on disk after that.
+  app.get("/emoji-assets-gz/:file", (req, res) => {
+    const gzFile = pathE.basename(req.params.file); // e.g. confetti.json.gz
+    if (!gzFile.endsWith(".gz")) return res.status(404).end();
+    const srcFile = gzFile.replace(/\.gz$/, "");
+    const srcFull = pathE.join(EMOJI_SRC_DIR, srcFile);
+    const gzFull  = pathE.join(EMOJI_GZ_DIR, gzFile);
+    if (!fsE.existsSync(srcFull)) return res.status(404).end();
+
+    try {
+      const srcStat = fsE.statSync(srcFull);
+      const needsRebuild = !fsE.existsSync(gzFull) || fsE.statSync(gzFull).mtimeMs < srcStat.mtimeMs;
+      if (needsRebuild) {
+        const gz = zlib.gzipSync(fsE.readFileSync(srcFull), { level: 9 });
+        fsE.writeFileSync(gzFull, gz);
+      }
+      // Deliberately application/octet-stream + NO Content-Encoding header —
+      // see the block comment above for why.
+      res.type("application/octet-stream").sendFile(gzFull);
+    } catch (e) {
+      console.warn("[emoji-packs] gzip serve failed for", gzFile, ":", e.message);
+      res.status(500).end();
+    }
+  });
+
+  console.log("[OK] emoji-packs routes ready:", EMOJI_SRC_DIR);
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Cloudinary signed upload
@@ -890,26 +925,15 @@ app.post("/notify", async (req, res) => {
     }
 
     let fromMobile = "", fromPhoto = "", fromThumb = "", fromLastSeen = "0";
-    // HUN-FIX: reaction (and other) pushes were showing "Someone" because the
-    // Android side sometimes has no reliable in-memory display name at the
-    // moment it fires (e.g. ChatReactionController reacting from a chat that
-    // was opened via a notification tap, where "currentName" extra isn't
-    // always passed through). Server already fetches senderSnap for
-    // fromMobile/fromPhoto — reuse it as an authoritative fallback for the
-    // name too, so the notification never has to guess.
-    let dbFromName = "";
     if (senderSnap) {
       const f   = senderSnap.val() || {};
       fromMobile   = String(f.mobile   || f.callxId || "");
       fromPhoto    = String(f.photoUrl || req.body.fromPhoto || "");
       fromThumb    = String(f.thumbUrl || "");
       fromLastSeen = String(f.lastSeen || 0);
-      dbFromName   = String(f.name || f.displayName || "");
     } else if (req.body.fromPhoto) {
       fromPhoto = String(req.body.fromPhoto);
     }
-    const finalFromName = (fromName && String(fromName).trim())
-      ? String(fromName) : dbFromName;
 
     // ── Feature-4: Missed call — server se caller ka lastSeen + online fetch karo ──
     // Android side async Firebase fetch karta hai, but server se bhi pass karo
@@ -934,7 +958,7 @@ app.post("/notify", async (req, res) => {
       data: {
         type:         String(type      || "message"),
         fromUid:      String(fromUid   || ""),
-        fromName:     finalFromName,
+        fromName:     String(fromName  || ""),
         fromMobile:   fromMobile,
         fromPhoto:    fromPhoto,
         fromThumb:    fromThumb,
@@ -955,10 +979,7 @@ app.post("/notify", async (req, res) => {
         ...(isMessageReaction ? {
           reaction:  String(reaction  || "❤️"),
           groupId:   String(groupId   || ""),
-          groupName: String(groupName || ""),
-          // HUN-FIX: reaction time, so Android can setWhen() on the
-          // notification and show a real timestamp instead of "now".
-          ts:        String(Date.now())
+          groupName: String(groupName || "")
         } : {}),
         ...(isCall && text ? { callId: String(text) } : {}),
         // FIX-B: missed_call fields — client reads callerPhoto/callerUid/callerName/isVideo
