@@ -157,13 +157,16 @@ app.get("/ping", (req, res) =>
   const pathE = require("path");
   const zlib  = require("zlib");
 
-  const EMOJI_SRC_DIR = pathE.join(__dirname, "emoji-assets");
+  const EMOJI_SRC_DIR = pathE.join(__dirname, "emoji_assets"); // matches repo's server/emoji_assets
   const EMOJI_GZ_DIR   = pathE.join(__dirname, "emoji-assets-gz");
   if (!fsE.existsSync(EMOJI_SRC_DIR)) fsE.mkdirSync(EMOJI_SRC_DIR, { recursive: true });
   if (!fsE.existsSync(EMOJI_GZ_DIR)) fsE.mkdirSync(EMOJI_GZ_DIR, { recursive: true });
 
+  const IGNORED_FILES = new Set(["registry.json"]); // not an emoji, just metadata some tooling may drop here
+
   function buildManifest() {
-    const files = fsE.readdirSync(EMOJI_SRC_DIR).filter(f => f.endsWith(".json"));
+    const files = fsE.readdirSync(EMOJI_SRC_DIR)
+      .filter(f => f.endsWith(".json") && !IGNORED_FILES.has(f));
     let maxMtimeMs = 0;
     const emojis = files.map(fname => {
       const full = pathE.join(EMOJI_SRC_DIR, fname);
