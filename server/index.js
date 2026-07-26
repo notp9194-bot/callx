@@ -146,8 +146,16 @@ app.post("/cloudinary/sign", (req, res) => {
   }
   const folder       = (req.body && req.body.folder)        || "callx";
   const resourceType = (req.body && req.body.resource_type) || "auto";
+  // ✅ HLS support: optional eager transform, e.g. "sp_full_hd/m3u8" —
+  // requested by VideoUploader.java when uploading reel videos so Cloudinary
+  // returns an adaptive-streaming manifest alongside the normal upload.
+  // Must be included in the signed string (alphabetically: eager < folder <
+  // timestamp) exactly like /cloudinary/sign/video already does below, or
+  // Cloudinary rejects the upload with an invalid-signature error.
+  const eager        = (req.body && req.body.eager) || "";
   const timestamp    = Math.floor(Date.now() / 1000).toString();
-  const toSign       = `folder=${folder}&timestamp=${timestamp}`;
+  let toSign          = `folder=${folder}&timestamp=${timestamp}`;
+  if (eager) toSign = `eager=${eager}&` + toSign;
   const signature    = crypto.createHash("sha1")
     .update(toSign + CLOUD_SEC).digest("hex");
   res.json({
@@ -155,7 +163,8 @@ app.post("/cloudinary/sign", (req, res) => {
     api_key:       CLOUD_KEY,
     cloud_name:    CLOUD_NAME,
     folder,
-    resource_type: resourceType
+    resource_type: resourceType,
+    eager
   });
 });
 
@@ -189,6 +198,54 @@ app.post("/cloudinary/sign/video", (req, res) => {
     cloud_name: CLOUD_NAME,
     folder,
     eager
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CHAT MESSAGE TRANSLATION — POST /translate
+// Body: { text, target }  (target = 2-letter lang code, e.g. "hi", "en")
+// Response: { translated, detectedLang }
+//
+// Proxies to Google's free (unofficial, no API key / billing) translate
+// endpoint from the SERVER instead of the phone — keeps the client simple
+// and avoids per-device rate-limiting on translate.googleapis.com.
+// This is separate from the Cloudinary "Google Translation" add-on (that
+// one only translates Cloudinary asset tags, not arbitrary chat text).
+// ══════════════════════════════════════════════════════════════════════════════
+app.post("/translate", (req, res) => {
+  const text   = ((req.body && req.body.text)   || "").toString();
+  const target = ((req.body && req.body.target) || "en").toString();
+
+  if (!text.trim()) {
+    return res.status(400).json({ error: "text is required" });
+  }
+
+  const https = require("https");
+  const url = "https://translate.googleapis.com/translate_a/single"
+    + "?client=gtx&sl=auto&dt=t&tl=" + encodeURIComponent(target)
+    + "&q=" + encodeURIComponent(text);
+
+  https.get(url, gRes => {
+    let data = "";
+    gRes.on("data", chunk => { data += chunk; });
+    gRes.on("end", () => {
+      try {
+        const parsed = JSON.parse(data);
+        const segments = parsed[0] || [];
+        const translated = segments.map(seg => seg[0] || "").join("");
+        const detectedLang = parsed[2] || "";
+        if (!translated) {
+          return res.status(502).json({ error: "Empty translation" });
+        }
+        res.json({ translated, detectedLang });
+      } catch (e) {
+        console.error("[translate] parse failed:", e.message);
+        res.status(502).json({ error: "Translate parse failed: " + e.message });
+      }
+    });
+  }).on("error", e => {
+    console.error("[translate] request failed:", e.message);
+    res.status(502).json({ error: "Translate request failed: " + e.message });
   });
 });
 
