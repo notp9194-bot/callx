@@ -1822,6 +1822,74 @@ app.post("/notify/group_join", async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// GROUP E2E ENCRYPTION — Sender Keys re-sync nudge — POST /notify/group_key_rotate
+//
+// Supports GroupE2EManager.java (group chat text — Sender Keys protocol).
+// This endpoint carries NO key material at all — Sender Keys are only ever
+// exchanged client-to-client, sealed over each pair's existing 1:1
+// X3DH/Double-Ratchet session, and dropped at
+// groupSenderKeys/{groupId}/{recipientUid}/{fromUid} (a Firebase path this
+// server never reads or writes). All this does is send a silent data-only
+// push so the remaining members' apps call GroupE2EManager#ensureGroupCrypto
+// right away — picking up a rotation (member removed/left) or a fresh
+// distribution (member added) sooner than waiting for that member to next
+// open the group's chat screen, which is the correctness fallback either way.
+//
+// Called by GroupInfoActivity right after a member is removed or leaves.
+// Payload: groupId, excludeUid (the member who was just removed/left — skip
+// notifying them, they no longer have a session worth re-syncing).
+// Android: type="group_key_resync" → CallxMessagingService should call
+// GroupE2EManager.getInstance(ctx).ensureGroupCrypto(groupId, myUid, null)
+// on receipt (data-only push, no visible notification).
+// ══════════════════════════════════════════════════════════════════════════════
+app.post("/notify/group_key_rotate", async (req, res) => {
+  if (!firebaseReady)
+    return res.status(503).json({ error: "Firebase not configured" });
+
+  const { groupId, excludeUid = "" } = req.body || {};
+  if (!groupId) return res.status(400).json({ error: "groupId required" });
+
+  try {
+    const db    = admin.database();
+    const gSnap = await db.ref("groups/" + groupId).once("value");
+    const g     = gSnap.val();
+    if (!g) return res.status(404).json({ error: "group not found" });
+
+    const memberUids = Object.keys(g.members || {}).filter(uid => uid !== excludeUid);
+    if (!memberUids.length) return res.json({ ok: true, sent: 0 });
+
+    const userSnaps = await Promise.all(
+      memberUids.map(uid => db.ref("users/" + uid).once("value"))
+    );
+
+    let sent = 0;
+    await Promise.all(userSnaps.map(async (snap) => {
+      const u  = snap.val() || {};
+      const tk = u.fcmToken;
+      if (!tk) return;
+      try {
+        await admin.messaging().send({
+          token: tk,
+          data: {
+            type:    "group_key_resync",
+            groupId: String(groupId)
+          },
+          android: { priority: "high", ttl: 60 * 60 * 1000 } // no visible notif — data-only, short TTL is fine, next chat-open self-heals anyway
+        });
+        sent++;
+      } catch (e) {
+        console.warn("group_key_rotate send fail:", e.message);
+      }
+    }));
+
+    res.json({ ok: true, sent });
+  } catch (e) {
+    console.error("group_key_rotate notify err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Android App Links + Deep Link Routes
 // ══════════════════════════════════════════════════════════════════════════════
 const ASSET_LINKS = [
