@@ -1812,6 +1812,146 @@ const ASSET_LINKS = [
   }
 ];
 
+// ══════════════════════════════════════════════════════════════════════════════
+// E2E ENCRYPTION — prekey bundle storage & exchange (X3DH key material)
+//
+// Supports E2EEncryptionManager.java (1:1 chat text — Double Ratchet).
+// Firebase path owned exclusively by this server (NOT written/read directly
+// by the Android client — see UPGRADE_NOTES_v?_E2EEncryption.md for the
+// recommended security-rules change locking this node down):
+//
+//   e2e_prekeys/{uid} = {
+//     identityKey:      base64 EC P-256 public key (long-term identity),
+//     signedPreKey:     base64 EC P-256 public key (rotates occasionally),
+//     signedPreKeySig:  base64 ECDSA signature of signedPreKey by identityKey,
+//     signedPreKeyId:   short id, so a responder can tell if its own SPK
+//                       rotated between when a sender fetched it and when
+//                       the sender's first message arrives,
+//     oneTimePreKeys:   { <id>: base64 pubkey, ... }  — each one handed out
+//                       AT MOST ONCE (see the transaction in GET /bundle)
+//   }
+//
+// WHY THIS LIVES ON THE SERVER AND NOT AS A DIRECT CLIENT WRITE (like the
+// old e2e_keys/{uid}/publicKey field from the previous, static-key version
+// of E2EEncryptionManager): one-time prekeys are only secure if each one is
+// ever handed out to exactly one requester. Doing that "pop one and delete
+// it" step as a client-side Firebase transaction would require security
+// rules that let ANY authenticated user run a transaction against ANY OTHER
+// user's prekey node — which is exactly the kind of broad write access you
+// don't want on key material. Routing it through the server means the
+// Firebase rule for e2e_prekeys can be locked to admin-only (".write":
+// false, ".read": false) and every consumption goes through one auditable,
+// atomic code path.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const MAX_ONE_TIME_PREKEYS_STORED = 100; // cap per user, prevents unbounded growth from repeat uploads
+
+/** Verifies the Firebase ID token on Authorization: Bearer <token> and sets req.uid. */
+async function verifyFirebaseAuth(req, res, next) {
+  if (!firebaseReady) return res.status(503).json({ error: "Firebase not configured" });
+  const authHeader = req.headers.authorization || "";
+  const match = authHeader.match(/^Bearer (.+)$/);
+  if (!match) return res.status(401).json({ error: "Missing Authorization: Bearer <idToken>" });
+  try {
+    const decoded = await admin.auth().verifyIdToken(match[1]);
+    req.uid = decoded.uid;
+    next();
+  } catch (e) {
+    return res.status(401).json({ error: "Invalid or expired auth token" });
+  }
+}
+
+// POST /e2e/keys — upload/refresh our own prekey bundle.
+// Body: { identityKey, signedPreKey, signedPreKeySig, signedPreKeyId, oneTimePreKeys: [{id,key}, ...] }
+// Auth: Authorization: Bearer <Firebase ID token> — req.uid is whose bundle this is (never trusts a uid in the body).
+app.post("/e2e/keys", verifyFirebaseAuth, async (req, res) => {
+  try {
+    const { identityKey, signedPreKey, signedPreKeySig, signedPreKeyId, oneTimePreKeys } = req.body || {};
+    if (!identityKey || !signedPreKey || !signedPreKeySig || !signedPreKeyId) {
+      return res.status(400).json({
+        error: "identityKey, signedPreKey, signedPreKeySig, signedPreKeyId are required"
+      });
+    }
+
+    const db  = admin.database();
+    const ref = db.ref("e2e_prekeys/" + req.uid);
+
+    await ref.update({
+      identityKey, signedPreKey, signedPreKeySig, signedPreKeyId,
+      updatedAt: admin.database.ServerValue.TIMESTAMP
+    });
+
+    if (Array.isArray(oneTimePreKeys) && oneTimePreKeys.length) {
+      // Merge new one-time prekeys in rather than clobbering — a partner
+      // may be mid-handshake using one from a previous upload right now.
+      const otpRef = ref.child("oneTimePreKeys");
+      const snap = await otpRef.once("value");
+      const merged = Object.assign({}, snap.val() || {});
+      for (const otp of oneTimePreKeys) {
+        if (otp && otp.id && otp.key) merged[otp.id] = otp.key;
+      }
+      const ids = Object.keys(merged);
+      if (ids.length > MAX_ONE_TIME_PREKEYS_STORED) {
+        const dropCount = ids.length - MAX_ONE_TIME_PREKEYS_STORED;
+        for (let i = 0; i < dropCount; i++) delete merged[ids[i]]; // drop oldest-inserted first
+      }
+      await otpRef.set(merged);
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[/e2e/keys] failed:", e.message);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+// GET /e2e/bundle/:uid — fetch a prekey bundle to start an X3DH handshake
+// with :uid. Atomically pops (removes) ONE one-time prekey so it can never
+// be handed out twice, even under concurrent requests from two different
+// partners starting a chat with the same person at once.
+// Auth: Authorization: Bearer <Firebase ID token> of the FETCHER (not :uid).
+app.get("/e2e/bundle/:uid", verifyFirebaseAuth, async (req, res) => {
+  try {
+    const targetUid = req.params.uid;
+    const db  = admin.database();
+    const ref = db.ref("e2e_prekeys/" + targetUid);
+
+    const snap = await ref.once("value");
+    if (!snap.exists()) {
+      return res.status(404).json({ error: "No prekey bundle published for this user yet" });
+    }
+    const bundle = snap.val();
+    if (!bundle.identityKey || !bundle.signedPreKey || !bundle.signedPreKeySig) {
+      return res.status(404).json({ error: "Incomplete prekey bundle" });
+    }
+
+    let poppedOneTimePreKey = null;
+    const otpRef = ref.child("oneTimePreKeys");
+    await otpRef.transaction((current) => {
+      poppedOneTimePreKey = null; // reset on every attempt — transaction() may retry this fn on contention
+      if (!current) return current;
+      const ids = Object.keys(current);
+      if (!ids.length) return current;
+      const pickedId = ids[0];
+      poppedOneTimePreKey = { id: pickedId, key: current[pickedId] };
+      const next = Object.assign({}, current);
+      delete next[pickedId];
+      return next;
+    });
+
+    res.json({
+      identityKey:     bundle.identityKey,
+      signedPreKey:    bundle.signedPreKey,
+      signedPreKeySig: bundle.signedPreKeySig,
+      signedPreKeyId:  bundle.signedPreKeyId,
+      oneTimePreKey:   poppedOneTimePreKey // null if the pool is empty — client falls back to no-OPK X3DH
+    });
+  } catch (e) {
+    console.error("[/e2e/bundle] failed:", e.message);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
 app.get("/.well-known/assetlinks.json", (req, res) => {
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Cache-Control", "public, max-age=3600");
