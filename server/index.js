@@ -734,8 +734,14 @@ app.post("/translate", (req, res) => {
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Helper: build history JSON from Firebase snapshot
-// Returns JSON string: [{"t":"Hi","ts":1234567890,"me":false}, ...]
+// Returns JSON string: [{"id":"-Nabc123","t":"Hi","ts":1234567890,"me":false}, ...]
 // "me":true = message sent BY the notification receiver (their own bubble)
+// "id" = the message's real Firebase key — Android needs this to safely
+// decrypt E2E ("e2r1:...") text through its idempotent per-message decrypt
+// cache (see E2EEncryptionManager#decrypt(envelope, partnerUid, messageId)).
+// Without a stable id, the client can't cache the result, and re-decrypting
+// the same ciphertext a second time (e.g. when the chat is later opened)
+// fails — the Double Ratchet only allows a message's key to be derived once.
 // ══════════════════════════════════════════════════════════════════════════════
 function getHistoryJson(histSnap, receiverUid) {
   if (!histSnap || !histSnap.exists()) return "";
@@ -747,6 +753,11 @@ function getHistoryJson(histSnap, receiverUid) {
     const ts   = Number(v.timestamp || 0);
     if (ts === 0) return;
     const sid  = String(v.senderId || v.fromUid || "");
+    // NOTE: don't apply the "Message"/"Photo"/etc fallback label to E2E
+    // ciphertext here — an "e2r1:..." envelope is never empty, so it never
+    // hits this branch anyway, but keep the intent explicit: this fallback
+    // is only for genuinely empty text (e.g. media-only messages), not a
+    // substitute for decryption.
     if (!t) {
       if      (type === "image") t = "\uD83D\uDCF7 Photo";
       else if (type === "video") t = "\uD83C\uDFAC Video";
@@ -755,7 +766,7 @@ function getHistoryJson(histSnap, receiverUid) {
       else if (type === "pdf"  ) t = "\uD83D\uDCC4 PDF document";
       else t = "Message";
     }
-    items.push({ t, ts, me: sid === receiverUid });
+    items.push({ id: child.key, t, ts, me: sid === receiverUid });
   });
   items.sort((a, b) => a.ts - b.ts);
   return JSON.stringify(items);
@@ -928,6 +939,20 @@ app.post("/notify", async (req, res) => {
         fromLastSeen: fromLastSeen,
         chatId:       String(chatId    || ""),
         messageId:    String(messageId || ""),
+        // FIX: Android's CallxMessagingService reads "msgId" (this is what
+        // group message notifications already send, alongside "messageId" —
+        // see the /group notify path below). The 1:1 /notify path was only
+        // sending "messageId", so the client's msgId lookup always fell
+        // through to its generated fallback — meaning the real Firebase
+        // message id never reached the client for this message. That broke
+        // E2EEncryptionManager's per-messageId decrypt cache: a message
+        // "decrypted" by the notification (uncached, since it had no real
+        // id to key against) would fail with "Unable to decrypt message"
+        // when ChatActivity decrypted the SAME ciphertext again later using
+        // its real id — the Double Ratchet only allows a message's key to
+        // be derived once. Sending msgId here keeps both paths on the same
+        // real id so the cache actually works.
+        msgId:        String(messageId || ""),
         mediaUrl:     String(mediaUrl  || ""),
         text:         String(text      || ""),
         permaBlocked: "0",
