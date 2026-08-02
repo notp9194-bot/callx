@@ -111,6 +111,94 @@ if (process.env.NODE_ENV !== "test") {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// LINKED DEVICES — mint a Firebase Auth custom token the instant the phone
+// approves a "CallX2 Web" QR pairing.
+//
+// WHY THIS HAS TO LIVE ON A SERVER (not the phone or the browser):
+// signInWithCustomToken lets a client sign in AS a given uid, so only code
+// holding the Admin SDK's service-account credentials is allowed to mint
+// one — same rule as everything else in this file that calls `admin.*`.
+// This server already keeps a live Admin SDK connection open (it's how the
+// delivery-fallback job above works too), so a persistent .on() listener
+// here is simpler than standing up a separate Cloud Functions deploy for
+// the same job — no extra `firebase deploy --only functions` step, no
+// second billing surface, one less moving part to keep in sync.
+//
+// FLOW (see core/linkeddevice/LinkedDeviceManager.java + callx2-web.html):
+//   1. Web writes pairingSessions/{code} = {status:'pending', deviceInfo}
+//   2. Phone scans the QR, approves, writes status:'approved' + uid + deviceId
+//   3. THIS listener fires on that change, mints the token, writes it back
+//      as pairingSessions/{code}/customToken
+//   4. Web (already listening) signs in with it, then deletes the node —
+//      it's single-use, so nothing valid is ever left sitting in the DB.
+// ══════════════════════════════════════════════════════════════════════════════
+if (firebaseReady) {
+  const linkedDb = admin.database();
+
+  linkedDb.ref("pairingSessions").on("child_changed", async snap => {
+    try {
+      const session = snap.val();
+      const pairingCode = snap.key;
+      if (!session || session.status !== "approved") return;
+      if (session.customToken) return; // already minted — avoid a duplicate token on re-fires
+      if (!session.uid || !session.deviceId) {
+        console.warn(`[linked-devices] ${pairingCode} approved without uid/deviceId — skipping`);
+        return;
+      }
+
+      const token = await admin.auth().createCustomToken(session.uid, {
+        linkedDevice: true,
+        deviceId: session.deviceId
+      });
+      await linkedDb.ref(`pairingSessions/${pairingCode}/customToken`).set(token);
+      await linkedDb.ref(`pairingSessions/${pairingCode}/tokenIssuedAt`)
+        .set(admin.database.ServerValue.TIMESTAMP);
+      console.log(`[linked-devices] minted companion token uid=${session.uid} device=${session.deviceId}`);
+    } catch (e) {
+      console.error("[linked-devices] token mint failed:", e.message);
+      // Best-effort — deny the session so the web client's own 90s timeout
+      // doesn't leave the user staring at "Linked! Signing in…" forever.
+      try {
+        await linkedDb.ref(`pairingSessions/${snap.key}/status`).set("denied");
+      } catch (_) { /* nothing more we can do */ }
+    }
+  });
+
+  // Housekeeping, same polling style as the delivery-fallback job above:
+  // sweep QR codes that expired unapproved, and approved sessions whose
+  // token the web client never came back to consume/delete (crashed tab,
+  // closed browser mid-handshake, etc).
+  const PAIRING_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // every 5 min
+  setInterval(async () => {
+    try {
+      const snap = await linkedDb.ref("pairingSessions").once("value");
+      if (!snap.exists()) return;
+      const now = Date.now();
+      const updates = {};
+      snap.forEach(child => {
+        const s = child.val();
+        if (!s) return;
+        if (s.status === "pending" && s.expiresAt && s.expiresAt < now) {
+          updates[child.key] = null;
+        } else if (s.status === "approved" && s.tokenIssuedAt && (now - s.tokenIssuedAt) > 120000) {
+          updates[child.key] = null;
+        }
+      });
+      if (Object.keys(updates).length) {
+        await linkedDb.ref("pairingSessions").update(updates);
+        console.log(`[linked-devices] cleaned up ${Object.keys(updates).length} stale pairing session(s)`);
+      }
+    } catch (e) {
+      console.warn("[linked-devices] cleanup job failed:", e.message);
+    }
+  }, PAIRING_CLEANUP_INTERVAL_MS);
+
+  console.log("[OK] Linked Devices pairing listener attached");
+} else {
+  console.warn("[WARN] Linked Devices pairing listener NOT attached — Firebase Admin not ready");
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Cloudinary config
 // ══════════════════════════════════════════════════════════════════════════════
 const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "dvqqgqdls";
