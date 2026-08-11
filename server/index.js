@@ -1159,8 +1159,14 @@ app.post("/notify/reel", async (req, res) => {
   try {
     const snap = await admin.database().ref("users/" + toUid).once("value");
     const user = snap.val() || {};
-    if (!user.fcmToken)
+    if (!user.fcmToken) {
+      // 🐞 BUG FIX: this returned 404 with zero server-side log — so a
+      // missing/stale fcmToken for the recipient (e.g. collab invite target)
+      // silently dropped the push with no trace anywhere. Now it's logged
+      // so "collab_request never arrived" is diagnosable from server logs.
+      console.warn("[/notify/reel] no fcmToken for toUid=" + toUid + " type=" + type + " reelId=" + (reelId || ""));
       return res.status(404).json({ error: "no token" });
+    }
 
     let senderPhoto = String(fromPhoto || "");
     if (!senderPhoto && fromUid) {
@@ -1196,6 +1202,13 @@ app.post("/notify/reel", async (req, res) => {
       },
       android: { priority: "high", ttl: 86400000 }
     });
+
+    // 🐞 BUG FIX: no success log existed for collab pushes — add one so a
+    // successful send is confirmable in server logs (e.g. Render dashboard)
+    // and clearly distinguished from client-side delivery/display failures.
+    if (type === "collab_request" || type === "collab_accepted" || type === "collab_declined") {
+      console.log("[/notify/reel] " + type + " sent OK, id:", r, "toUid:", toUid, "reelId:", reelId);
+    }
 
     res.json({ ok: true, id: r });
   } catch (e) {
