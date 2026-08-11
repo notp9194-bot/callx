@@ -1103,7 +1103,7 @@ const VALID_REEL_TYPES = new Set([
   "like", "comment", "comment_like", "comment_reply",
   "mention_caption", "mention_comment", "new_follower",
   "following_posted", "duet", "stitch", "video_reply",
-  "collab_request", "collab_accepted", "gift",
+  "collab_request", "collab_accepted", "collab_declined", "gift",
   "live_started", "live_milestone", "close_friend_live",
   "trending", "viral", "view_milestone", "follower_milestone",
   "upload_complete", "upload_failed", "scheduled_post",
@@ -1117,6 +1117,10 @@ const VALID_REEL_TYPES = new Set([
   "repost",
   // Multi-Duet invite
   "multi_duet_invite",
+  // ✅ FIX: client (ReelFCMNotificationHandler.TYPE_MULTI_DUET_READY) "multi_duet_ready"
+  // bhejta hai jab sab participants record kar chuke hote h, par ye set me missing tha
+  // — isliye ye push hamesha 400 "invalid reel_notif_type" leke fail ho jaata tha.
+  "multi_duet_ready",
   // Collab Repost cross-device push
   "collab_repost_invite",
   "collab_repost_accepted",
@@ -1132,7 +1136,12 @@ app.post("/notify/reel", async (req, res) => {
     reelId, reelThumb, type, commentText, commentId,
     sessionId,      // multi_duet_invite ke liye extra field
     collabRepostId, // Collab Repost: invite/accepted/declined ke liye (CollabRepostNotificationHelper isi key se padhta h)
-    newReelId       // Collab Repost: accepted ke baad ka naya reel id
+    newReelId,      // Collab Repost: accepted ke baad ka naya reel id
+    collabId        // NEW — "Add Collaborators" (joint-post) feature: collabPostInvites/
+                     // ki push key. ReelFCMNotificationHandler ise "collab_id" data-key se
+                     // padhta hai (TYPE_COLLAB_REQUEST / TYPE_COLLAB_ACCEPTED / TYPE_COLLAB_DECLINED)
+                     // — pehle ye field yahan accept hi nahi hoti thi isliye collab_id hamesha
+                     // khali jaata tha aur notification tap karne par sahi invite open nahi hota tha.
   } = req.body || {};
 
   if (!toUid)  return res.status(400).json({ error: "toUid required" });
@@ -1180,7 +1189,10 @@ app.post("/notify/reel", async (req, res) => {
         // aa to jaati thi but collabId/newReelId empty aate the (notif id clash +
         // "highlight_collab_id" deep-link kabhi kaam nahi karta tha).
         collabRepostId:  String(collabRepostId || ""),
-        newReelId:       String(newReelId      || "")
+        newReelId:       String(newReelId      || ""),
+        // NEW — "Add Collaborators" (joint-post) feature. Key "collab_id" rakhi h kyunki
+        // ReelFCMNotificationHandler exactly isi string se padhta h (get(data, "collab_id")).
+        collab_id:       String(collabId || "")
       },
       android: { priority: "high", ttl: 86400000 }
     });
