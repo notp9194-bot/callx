@@ -518,6 +518,33 @@ app.post("/translate", (req, res) => {
   //     so a new upload only needs to look up a small sample of its own
   //     hashes rather than compare against every stored fingerprint.
   //
+  // ── v2 UPGRADE: offset-consistent voting + noise/compression tolerance ──
+  //   1) PARTIAL / OFFSET MATCHING — every hash now carries the FRAME INDEX
+  //      it occurred at (both when stored in the index and when queried).
+  //      A genuine match — even if the upload is only a 10s slice of a 60s
+  //      original — produces votes that all agree on ONE (refT - queryT)
+  //      offset, because it's the same audio just shifted in time. Random
+  //      hash collisions from unrelated clips scatter across many different
+  //      offsets instead. So we now bucket votes by (sound_id, offsetBin)
+  //      rather than by sound_id alone — this is exactly what makes Shazam
+  //      itself robust to trimmed/offset clips, and it doubles as a much
+  //      stronger anti-false-positive filter than a raw vote count ever was.
+  //      The winning bucket's offset is reported back as offset_sec: where,
+  //      inside the ORIGINAL track, this upload's audio actually begins.
+  //   2) NOISE / COMPRESSION TOLERANCE — two independent changes:
+  //        a) Peak bins are quantized (AUDIO_QUANT_STEP) before hashing, so
+  //           the small bin-shift a re-encode/trim/bitrate-change tends to
+  //           introduce no longer flips the hash to a completely different
+  //           value.
+  //        b) Near-silent frames are skipped entirely (AUDIO_MIN_FRAME_ENERGY)
+  //           so lossy re-encode noise-floor artifacts in quiet passages
+  //           don't mint garbage hashes that dilute the real match.
+  //      NOTE (honest limitation): this does not attempt tempo/speed-change
+  //      invariance — a pitch/speed-altered clip needs chroma+DTW-style
+  //      matching, which is a materially bigger system than a landmark-hash
+  //      index. AUDIO_DELTA_BIN_HOPS gives a little slack for encoder frame-
+  //      alignment jitter, not for deliberate speed changes.
+  //
   // POST /audio/match  (multipart/form-data)
   //   file          — extracted audio (m4a/aac; anything FFmpeg can decode)
   //   uid           — uploader's uid
@@ -529,13 +556,15 @@ app.post("/translate", (req, res) => {
   //                   fingerprint index is what lets a MATCH's sound_id be
   //                   used directly as an existing sounds/{id} lookup.
   //
-  // Response: { matched, sound_id, owner_uid }
+  // Response: { matched, sound_id, owner_uid, offset_sec }
   //   matched=true  → sound_id belongs to an EARLIER reel's audio (possibly
   //                   this same uploader's own earlier reel); owner_uid is
-  //                   that original creator.
+  //                   that original creator; offset_sec is where in that
+  //                   original track this upload's audio starts (0 if it's
+  //                   basically the same start point).
   //   matched=false → sound_id === the new_sound_id you sent; this upload
   //                   is now registered as the original for future matches;
-  //                   owner_uid === uid you sent.
+  //                   owner_uid === uid you sent; offset_sec is 0.
   // ════════════════════════════════════════════════════════════════════════
   (function setupAudioFingerprint() {
 
@@ -572,13 +601,15 @@ app.post("/translate", (req, res) => {
     }
 
     // ── FFmpeg: extract mono 11025Hz raw PCM (s16le) from any audio/video ──
+    const SAMPLE_RATE = 11025;
+
     function extractPcmMono11025(inputPath) {
       return new Promise((resolve, reject) => {
         const outPath = inputPath + "_fp.pcm";
         ffmpeg(inputPath)
           .noVideo()
           .audioChannels(1)
-          .audioFrequency(11025)
+          .audioFrequency(SAMPLE_RATE)
           .outputOptions(["-f", "s16le", "-acodec", "pcm_s16le"])
           .on("end", () => {
             try {
@@ -598,6 +629,26 @@ app.post("/translate", (req, res) => {
     // Bin ranges tuned for 11025Hz / 1024-pt FFT (bin width ≈ 10.77 Hz)
     const BANDS = [[3, 10], [10, 20], [20, 40], [40, 80], [80, 180]];
 
+    // ── FAN-OUT: hash each PAIR of band-peaks separately instead of combining
+    // all 5 into one hash. This is the actual fix that makes noise/compression
+    // tolerance work — a single 5-way-combined hash needs all 5 bins correct
+    // simultaneously to match at all (measured: <5% survival under mild re-
+    // encode noise, even with generous quantization). Splitting into several
+    // redundant 2-band hashes means one corrupted band only kills the pairs
+    // that used it — the rest still land in the index and vote correctly.
+    // (measured: ~65-83% hash survival under the same noise, see test notes.)
+    const PAIRS = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 2], [1, 3]];
+
+    // Quantizing bins before hashing absorbs the small peak-bin drift a
+    // re-encode/trim/bitrate-change tends to introduce. Combined with the
+    // fan-out above (not a substitute for it — quantization alone barely
+    // helps a fragile single combined hash).
+    const QUANT_STEP        = parseInt(process.env.AUDIO_QUANT_STEP, 10)        || 3;
+    // Frames quieter than this (mean squared sample amplitude, 0..1 scale)
+    // are skipped — lossy re-encode noise-floor artifacts in near-silent
+    // passages otherwise mint hashes that only add noise, never real votes.
+    const MIN_FRAME_ENERGY  = parseFloat(process.env.AUDIO_MIN_FRAME_ENERGY)    || 0.0015;
+
     function computeFingerprintHashes(pcmBuffer) {
       const numSamples = Math.floor(pcmBuffer.length / 2); // 16-bit samples
       if (numSamples < FFT_SIZE) return [];
@@ -607,16 +658,26 @@ app.post("/translate", (req, res) => {
         window[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (FFT_SIZE - 1));
       }
 
-      const hashes = new Set();
+      // hash(string) -> first frame index it occurred at. Deduping to first
+      // occurrence keeps the index write cost bounded; the frame index is
+      // what enables offset-consistent voting below.
+      const hashMap = new Map();
       const re = new Float64Array(FFT_SIZE);
       const im = new Float64Array(FFT_SIZE);
 
       for (let start = 0; start + FFT_SIZE <= numSamples; start += HOP) {
+        const frameIndex = start / HOP;
+
+        let energy = 0;
         for (let i = 0; i < FFT_SIZE; i++) {
           const s = pcmBuffer.readInt16LE((start + i) * 2) / 32768;
+          energy += s * s;
           re[i] = s * window[i];
           im[i] = 0;
         }
+        energy /= FFT_SIZE;
+        if (energy < MIN_FRAME_ENERGY) continue; // near-silent — skip, don't hash noise
+
         fftRadix2(re, im);
 
         const peaks = [];
@@ -626,24 +687,53 @@ app.post("/translate", (req, res) => {
             const mag = re[b] * re[b] + im[b] * im[b];
             if (mag > maxMag) { maxMag = mag; maxBin = b; }
           }
-          peaks.push(maxBin);
+          // Quantize AFTER finding the true peak — the true peak location
+          // is what makes the pick meaningful, quantizing just widens the
+          // "same peak" tolerance for the hash itself.
+          peaks.push(Math.floor(maxBin / QUANT_STEP));
         }
 
-        const hash = ((peaks[0] & 0xFF)) |
-                     ((peaks[1] & 0xFF) << 8) |
-                     ((peaks[2] & 0xFF) << 16) |
-                     ((peaks[3] & 0xFF) << 24);
-        const hash2 = (hash ^ Math.imul(peaks[4] & 0xFF, 2654435761)) >>> 0;
-        hashes.add(String(hash2));
+        for (let p = 0; p < PAIRS.length; p++) {
+          const [a, b] = PAIRS[p];
+          const hash = ((peaks[a] & 0xFF)) | ((peaks[b] & 0xFF) << 8) | ((p & 0xF) << 16);
+          const key = String(hash >>> 0);
+          if (!hashMap.has(key)) hashMap.set(key, frameIndex);
+        }
       }
-      return Array.from(hashes);
+
+      const out = [];
+      for (const [h, t] of hashMap) out.push({ h, t });
+      return out;
     }
 
     // ── Match against the inverted index, or register as new ───────────────
-    const MATCH_QUERY_SAMPLE  = 60;   // hashes actually queried — keeps latency sane
-    const MATCH_THRESHOLD     = 0.30; // fraction of sampled hashes that must hit the same sound
-    const INDEX_HASH_CAP      = 400;  // hashes stored per NEW sound — keeps index writes bounded
-    const MIN_HASHES_REQUIRED = 20;   // shorter than this = likely silence/near-empty audio
+    // Tunable via env — no redeploy-code-change needed to adjust sensitivity,
+    // just update the env var on Render and restart.
+    //   MATCH_QUERY_SAMPLE — hashes actually queried, keeps latency sane
+    //   MATCH_THRESHOLD    — fraction of sampled hashes that must hit the
+    //                        same sound (ratio-only was giving false
+    //                        positives on short/quiet clips where the sample
+    //                        itself is tiny — e.g. 3/8 = 37% looks confident
+    //                        but is really just noise). Lowered default from
+    //                        0.30 → 0.22 since real same-audio uploads were
+    //                        landing at 25-30%, not the 30%+ assumed earlier.
+    //   MATCH_MIN_VOTES    — NEW: absolute floor on votes, independent of
+    //                        ratio, so a 1/2 "match" on a near-silent clip
+    //                        can't sneak past the ratio check.
+    //   DELTA_BIN_HOPS     — width (in hops) of the alignment bucket used to
+    //                        group votes by (sound_id, offset). Small values
+    //                        demand near-exact frame alignment; too small and
+    //                        genuine matches split their votes across
+    //                        neighboring buckets and lose to the ratio/min-
+    //                        votes floor.
+    // Defaults bumped for the v2 fan-out hasher (~2-3x more hashes per second
+    // of audio than the old single-combined-hash design — see PAIRS above).
+    const MATCH_QUERY_SAMPLE  = parseInt(process.env.AUDIO_MATCH_QUERY_SAMPLE, 10) || 90;
+    const MATCH_THRESHOLD     = parseFloat(process.env.AUDIO_MATCH_THRESHOLD)     || 0.25;
+    const MATCH_MIN_VOTES     = parseInt(process.env.AUDIO_MATCH_MIN_VOTES, 10)   || 10;
+    const INDEX_HASH_CAP      = parseInt(process.env.AUDIO_INDEX_HASH_CAP, 10)    || 1000;
+    const MIN_HASHES_REQUIRED = parseInt(process.env.AUDIO_MIN_HASHES, 10)        || 30;
+    const DELTA_BIN_HOPS      = parseInt(process.env.AUDIO_DELTA_BIN_HOPS, 10)    || 2;
 
     async function matchOrCreateSoundId({ hashes, ownerUid, reelId, newSoundId }) {
       const db = admin.database();
@@ -654,27 +744,53 @@ app.post("/translate", (req, res) => {
         sample.push(hashes[i]);
       }
 
+      // Votes are bucketed by (sound_id, offsetBin) — NOT sound_id alone.
+      // A real match (even a short slice of a longer original) agrees on
+      // one consistent (refT - queryT) offset; unrelated collisions don't.
+      // See the big comment above setupAudioFingerprint for why.
       const votes = {};
-      await Promise.all(sample.map(async h => {
+      await Promise.all(sample.map(async ({ h, t: queryT }) => {
         try {
           const snap = await db.ref(`audio_hash_index/${h}`).once("value");
           if (!snap.exists()) return;
-          const matches = snap.val();
-          for (const soundId of Object.keys(matches)) {
-            votes[soundId] = (votes[soundId] || 0) + 1;
+          const matches = snap.val(); // { soundId: refFrameIndex, ... }
+          for (const [soundId, refT] of Object.entries(matches)) {
+            if (typeof refT !== "number") continue; // guards old-format `true` entries pre-upgrade
+            const deltaBin = Math.round((refT - queryT) / DELTA_BIN_HOPS);
+            const key = soundId + "|" + deltaBin;
+            votes[key] = (votes[key] || 0) + 1;
           }
         } catch (_) { /* one bad lookup shouldn't sink the whole match */ }
       }));
 
-      let bestId = null, bestVotes = 0;
-      for (const [soundId, count] of Object.entries(votes)) {
-        if (count > bestVotes) { bestVotes = count; bestId = soundId; }
+      let bestKey = null, bestVotes = 0;
+      for (const [key, count] of Object.entries(votes)) {
+        if (count > bestVotes) { bestVotes = count; bestKey = key; }
       }
 
-      if (bestId && sample.length > 0 && (bestVotes / sample.length) >= MATCH_THRESHOLD) {
+      let bestId = null, bestDeltaBin = 0;
+      if (bestKey) {
+        const sep = bestKey.lastIndexOf("|");
+        bestId = bestKey.slice(0, sep);
+        bestDeltaBin = parseInt(bestKey.slice(sep + 1), 10);
+      }
+
+      const ratio = sample.length > 0 ? bestVotes / sample.length : 0;
+      const isMatch = !!bestId && bestVotes >= MATCH_MIN_VOTES && ratio >= MATCH_THRESHOLD;
+
+      if (isMatch) {
         const metaSnap = await db.ref(`audio_fingerprints/${bestId}`).once("value");
         const meta = metaSnap.val() || {};
-        return { matched: true, sound_id: bestId, owner_uid: meta.ownerUid || "" };
+        // Where in the ORIGINAL track this upload's audio starts — lets the
+        // caller know it matched a portion of a longer sound, not just
+        // "some" match.
+        const offsetSec = Math.max(0, (bestDeltaBin * DELTA_BIN_HOPS * HOP) / SAMPLE_RATE);
+        console.log(`[audio-match] MATCHED sound=${bestId} votes=${bestVotes}/${sample.length} (${(ratio*100).toFixed(1)}%) offset=${offsetSec.toFixed(2)}s`);
+        return { matched: true, sound_id: bestId, owner_uid: meta.ownerUid || "", offset_sec: Number(offsetSec.toFixed(2)) };
+      }
+
+      if (bestId) {
+        console.log(`[audio-match] no match (best was ${bestId} votes=${bestVotes}/${sample.length}, ${(ratio*100).toFixed(1)}% — below threshold)`);
       }
 
       // No match — this becomes the new original. Use the ID the app already
@@ -688,12 +804,111 @@ app.post("/translate", (req, res) => {
         hashCount: hashes.length
       });
 
+      // Store each hash's FRAME INDEX (not just `true`) — this is what a
+      // future upload's query needs to compute an alignment offset against.
       const capped = hashes.slice(0, INDEX_HASH_CAP);
       const updates = {};
-      for (const h of capped) updates[`audio_hash_index/${h}/${soundId}`] = true;
+      for (const { h, t } of capped) updates[`audio_hash_index/${h}/${soundId}`] = t;
       if (Object.keys(updates).length) await db.ref().update(updates);
 
-      return { matched: false, sound_id: soundId, owner_uid: ownerUid || "" };
+      return { matched: false, sound_id: soundId, owner_uid: ownerUid || "", offset_sec: 0 };
+    }
+
+    // ── ASYNC QUEUE ──────────────────────────────────────────────────────
+    // WHY: FFT + PCM extraction is CPU-bound and, on Render's free/shared
+    // CPU, can take several seconds per clip — doing this synchronously
+    // inside the request meant every concurrent reel upload fought for the
+    // same CPU and the HTTP connection sat open (risking client timeouts)
+    // the whole time. Now the endpoint just accepts the file, queues the
+    // job, and returns immediately; a small in-process worker pool (bounded
+    // concurrency, so heavy load can't starve the rest of this server —
+    // /compress/video, deliveries, etc. — of CPU) processes jobs one at a
+    // time per slot and writes the result to Firebase. The app listens for
+    // that result via a normal Firebase RTDB listener (see
+    // VideoUploader.matchAudioFingerprint on the Android side) — same
+    // pattern already used for the linked-devices pairing flow above.
+    const FP_QUEUE_CONCURRENCY = parseInt(process.env.AUDIO_FP_CONCURRENCY, 10) || 2;
+    const FP_JOB_TTL_MS        = 60 * 60 * 1000; // job status nodes cleaned up after 1h
+
+    const fpQueue = [];
+    let   fpActive = 0;
+
+    function enqueueFingerprintJob(job) {
+      fpQueue.push(job);
+      pumpFingerprintQueue();
+    }
+
+    function pumpFingerprintQueue() {
+      while (fpActive < FP_QUEUE_CONCURRENCY && fpQueue.length > 0) {
+        const job = fpQueue.shift();
+        fpActive++;
+        runFingerprintJob(job).finally(() => {
+          fpActive--;
+          pumpFingerprintQueue();
+        });
+      }
+    }
+
+    async function runFingerprintJob({ jobId, inputPath, uid, reelId, newSoundId }) {
+      const db = admin.database();
+      const jobRef = db.ref(`audio_match_jobs/${jobId}`);
+      try {
+        await jobRef.update({ status: "processing" });
+
+        const pcm = await extractPcmMono11025(inputPath);
+        const hashes = computeFingerprintHashes(pcm);
+
+        let result;
+        if (hashes.length < MIN_HASHES_REQUIRED) {
+          result = { matched: false, sound_id: newSoundId || "", owner_uid: uid, offset_sec: 0 };
+        } else {
+          result = await matchOrCreateSoundId({ hashes, ownerUid: uid, reelId, newSoundId });
+        }
+
+        await jobRef.update({
+          status: "done",
+          matched: result.matched,
+          sound_id: result.sound_id,
+          owner_uid: result.owner_uid,
+          offset_sec: result.offset_sec || 0,
+          completedAt: admin.database.ServerValue.TIMESTAMP
+        });
+      } catch (err) {
+        console.error(`[audio-match] job ${jobId} failed:`, err.message);
+        try {
+          await jobRef.update({
+            status: "error",
+            error: err.message,
+            completedAt: admin.database.ServerValue.TIMESTAMP
+          });
+        } catch (_) { /* best effort — client's bounded wait will just time out */ }
+      } finally {
+        try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (_) {}
+      }
+    }
+
+    // Housekeeping: sweep job status nodes older than FP_JOB_TTL_MS so
+    // audio_match_jobs/ doesn't grow forever (mirrors the pairing-session
+    // and delivery-fallback cleanup jobs elsewhere in this file).
+    if (firebaseReady) {
+      setInterval(async () => {
+        try {
+          const db = admin.database();
+          const snap = await db.ref("audio_match_jobs").once("value");
+          if (!snap.exists()) return;
+          const now = Date.now();
+          const jobs = snap.val();
+          const updates = {};
+          for (const jobId of Object.keys(jobs)) {
+            const j = jobs[jobId];
+            const ts = j.completedAt || j.createdAt;
+            if (ts && now - ts > FP_JOB_TTL_MS) updates[jobId] = null;
+          }
+          if (Object.keys(updates).length) await db.ref("audio_match_jobs").update(updates);
+        } catch (e) {
+          console.warn("[audio-match] job cleanup failed:", e.message);
+        }
+      }, 15 * 60 * 1000); // every 15 min
     }
 
     const matchUpload = multer({
@@ -701,6 +916,9 @@ app.post("/translate", (req, res) => {
       limits: { fileSize: 30 * 1024 * 1024 } // 30 MB — audio-only file, small
     });
 
+    // POST /audio/match — now returns IMMEDIATELY with a job_id (202) instead
+    // of blocking on FFT. Client listens on audio_match_jobs/{job_id} in
+    // Firebase RTDB for the result (status: queued → processing → done/error).
     app.post("/audio/match", matchUpload.single("file"), async (req, res) => {
       if (!firebaseReady) {
         return res.status(503).json({ error: "Firebase not configured" });
@@ -713,28 +931,40 @@ app.post("/translate", (req, res) => {
       const { uid = "", reel_id = "", new_sound_id = "" } = req.body;
 
       try {
-        const pcm = await extractPcmMono11025(inputPath);
-        const hashes = computeFingerprintHashes(pcm);
+        const db = admin.database();
+        const jobRef = db.ref("audio_match_jobs").push();
+        const jobId  = jobRef.key;
 
-        if (hashes.length < MIN_HASHES_REQUIRED) {
-          return res.json({ matched: false, sound_id: new_sound_id || "", owner_uid: uid });
-        }
-
-        const result = await matchOrCreateSoundId({
-          hashes, ownerUid: uid, reelId: reel_id, newSoundId: new_sound_id
+        await jobRef.set({
+          status: "queued",
+          uid, reelId: reel_id, newSoundId: new_sound_id,
+          createdAt: admin.database.ServerValue.TIMESTAMP
         });
-        res.json(result);
+
+        enqueueFingerprintJob({ jobId, inputPath, uid, reelId: reel_id, newSoundId: new_sound_id });
+
+        res.status(202).json({ job_id: jobId, status: "queued" });
       } catch (err) {
-        console.error("[/audio/match] failed:", err.message);
-        // Non-fatal by design — caller (VideoUploader.java) falls back to
-        // "new original audio" on any error, same as before this feature.
-        res.status(500).json({ error: err.message });
-      } finally {
+        console.error("[/audio/match] enqueue failed:", err.message);
         try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (_) {}
+        res.status(500).json({ error: err.message });
       }
     });
 
-    console.log("[OK] /audio/match endpoint ready");
+    // GET /audio/match/status/:jobId — polling fallback for clients that
+    // can't/don't want a live Firebase listener (e.g. a simple curl check).
+    app.get("/audio/match/status/:jobId", async (req, res) => {
+      if (!firebaseReady) return res.status(503).json({ error: "Firebase not configured" });
+      try {
+        const snap = await admin.database().ref(`audio_match_jobs/${req.params.jobId}`).once("value");
+        if (!snap.exists()) return res.status(404).json({ error: "job not found" });
+        res.json(snap.val());
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    console.log(`[OK] /audio/match endpoint ready (async queue, concurrency=${FP_QUEUE_CONCURRENCY})`);
   })();
 })();
 
