@@ -539,11 +539,44 @@ app.post("/translate", (req, res) => {
   //        b) Near-silent frames are skipped entirely (AUDIO_MIN_FRAME_ENERGY)
   //           so lossy re-encode noise-floor artifacts in quiet passages
   //           don't mint garbage hashes that dilute the real match.
-  //      NOTE (honest limitation): this does not attempt tempo/speed-change
-  //      invariance — a pitch/speed-altered clip needs chroma+DTW-style
-  //      matching, which is a materially bigger system than a landmark-hash
-  //      index. AUDIO_DELTA_BIN_HOPS gives a little slack for encoder frame-
-  //      alignment jitter, not for deliberate speed changes.
+  //   3) SPEED-CHANGE / PITCH-SHIFT TOLERANCE (v3) — reel editors (CapCut,
+  //      InShot, the in-app editor) commonly offer a single linked
+  //      "speed" slider that changes tempo AND pitch together (classic
+  //      playback-rate change), rather than independent time-stretch.
+  //      That's a much cheaper problem than true tempo-invariant
+  //      chroma+DTW matching: a uniform speed change of factor f just
+  //      scales both the frequency axis AND the time axis by f, so
+  //      resampling the query's PCM by 1/f before hashing undoes it and
+  //      lines the landmark hashes back up with the untouched original's
+  //      index entries. We try this as a FALLBACK, only after the plain
+  //      1.0x attempt fails to clear the match threshold — see
+  //      SPEED_HYPOTHESES / matchOrCreateSoundId below. This is still an
+  //      approximation (linear-interpolation resampling, a fixed set of
+  //      common speed presets, not a continuous search) — a genuinely
+  //      non-linear tempo warp (rubber-band time-stretch without pitch
+  //      change, variable-speed edits) is still out of scope and would
+  //      need real chroma+DTW matching to catch.
+  //   4) EXACT-BYTE CACHE (v4) — an MD5 of the raw uploaded audio file is
+  //      checked BEFORE any ffmpeg/FFT work happens. A repost or retry of
+  //      the exact same file (byte-for-byte) short-circuits straight to
+  //      its cached sound_id — no PCM extraction, no FFT, no hash-index
+  //      lookups. Only saves work on literal duplicates; a re-encode, trim,
+  //      or the v3 speed-change all produce a different MD5 and fall
+  //      through to the normal perceptual-fingerprint pipeline untouched.
+  //   5) TRENDING-AUDIO ANALYTICS (v5) — every completed fingerprint job
+  //      (cache hit or full compute) records one usage event for its
+  //      sound_id, bucketed by UTC day. GET /audio/trending?days=&limit=
+  //      sums those buckets over a trailing window and returns the top
+  //      sounds — direct feed for a "Trending Sounds" UI. Independent of
+  //      the client-side sounds/{id}/reel_count field (that one only
+  //      tracks explicit "Use this sound" picks off a sound page; this one
+  //      tracks every raw/matched upload too, which is most of them).
+  //   6) LICENSED-MUSIC CATALOG MATCH (v6) — see the big comment above
+  //      matchLicensedCatalog for the full writeup. Short version: the same
+  //      landmark-hash engine, pointed at a SEPARATE licensed_catalog_*
+  //      namespace instead of the user-sound one, with stricter thresholds
+  //      and its own admin ingestion endpoint. Ships with an empty catalog —
+  //      this is the detection engine, not a bundled set of licensed tracks.
   //
   // POST /audio/match  (multipart/form-data)
   //   file          — extracted audio (m4a/aac; anything FFmpeg can decode)
@@ -556,15 +589,25 @@ app.post("/translate", (req, res) => {
   //                   fingerprint index is what lets a MATCH's sound_id be
   //                   used directly as an existing sounds/{id} lookup.
   //
-  // Response: { matched, sound_id, owner_uid, offset_sec }
+  // Response: { matched, sound_id, owner_uid, offset_sec, speed_factor,
+  //             copyright_match }
   //   matched=true  → sound_id belongs to an EARLIER reel's audio (possibly
   //                   this same uploader's own earlier reel); owner_uid is
   //                   that original creator; offset_sec is where in that
   //                   original track this upload's audio starts (0 if it's
-  //                   basically the same start point).
+  //                   basically the same start point). speed_factor is how
+  //                   much faster (>1) or slower (<1) this upload's audio
+  //                   plays vs the original — 1.0 for an untouched match,
+  //                   e.g. 1.5 if it took a speed-hypothesis match (v3).
   //   matched=false → sound_id === the new_sound_id you sent; this upload
   //                   is now registered as the original for future matches;
-  //                   owner_uid === uid you sent; offset_sec is 0.
+  //                   owner_uid === uid you sent; offset_sec is 0;
+  //                   speed_factor is 1.0.
+  //   copyright_match → null, OR (v6) { track_id, title, artist,
+  //                   rights_holder, policy, offset_sec, speed_factor } when
+  //                   this upload's audio matched something in the licensed
+  //                   catalog — independent of the matched/sound_id fields
+  //                   above (see matchLicensedCatalog for why).
   // ════════════════════════════════════════════════════════════════════════
   (function setupAudioFingerprint() {
 
@@ -621,6 +664,33 @@ app.post("/translate", (req, res) => {
           .on("error", reject)
           .save(outPath);
       });
+    }
+
+    // ── SPEED-CHANGE UNDO: linear-interpolation resample ───────────────────
+    // Undoes a uniform "linked speed" edit (tempo+pitch scaled together by
+    // the same factor — what CapCut/InShot/our own editor's speed slider
+    // does) so the resampled buffer's landmark hashes line back up with the
+    // ORIGINAL (unmodified) audio's index entries. speedFactor > 1 means the
+    // query plays FASTER/shorter/higher-pitched than the original (we
+    // stretch it back out); speedFactor < 1 means slower/longer/lower-
+    // pitched (we compress it back down). Cheap (O(n), plain linear
+    // interpolation) — good enough for landmark-hash re-alignment, not meant
+    // to sound good.
+    function resamplePcmBySpeedFactor(pcmBuffer, speedFactor) {
+      const inSamples  = Math.floor(pcmBuffer.length / 2);
+      const outSamples = Math.max(1, Math.round(inSamples * speedFactor));
+      const out = Buffer.alloc(outSamples * 2);
+      for (let i = 0; i < outSamples; i++) {
+        const srcPos = i / speedFactor;
+        const i0 = Math.min(inSamples - 1, Math.floor(srcPos));
+        const i1 = Math.min(inSamples - 1, i0 + 1);
+        const frac = srcPos - i0;
+        const s0 = pcmBuffer.readInt16LE(i0 * 2);
+        const s1 = pcmBuffer.readInt16LE(i1 * 2);
+        const s  = s0 + (s1 - s0) * frac;
+        out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(s))), i * 2);
+      }
+      return out;
     }
 
     // ── Shazam-style landmark hash: peak bin per frequency band per frame ──
@@ -735,29 +805,54 @@ app.post("/translate", (req, res) => {
     const MIN_HASHES_REQUIRED = parseInt(process.env.AUDIO_MIN_HASHES, 10)        || 30;
     const DELTA_BIN_HOPS      = parseInt(process.env.AUDIO_DELTA_BIN_HOPS, 10)    || 2;
 
-    async function matchOrCreateSoundId({ hashes, ownerUid, reelId, newSoundId }) {
-      const db = admin.database();
+    // ── v3: speed-change / pitch-shift fallback (see big comment above) ────
+    //   AUDIO_SPEED_INVARIANT_ENABLED — kill switch, no redeploy needed
+    //   AUDIO_SPEED_HYPOTHESES        — ordered candidate speed factors,
+    //                                   most-common-editor-presets first, so
+    //                                   the early-exit-on-first-match below
+    //                                   pays for the common cases fastest
+    //   AUDIO_SPEED_MAX_HYPOTHESES    — hard cap on how many of the above we
+    //                                   actually try per job — bounds worst-
+    //                                   case CPU on a genuinely-new upload
+    //                                   (one that matches nothing at any
+    //                                   speed still has to exhaust this list)
+    //   AUDIO_SPEED_MATCH_QUERY_SAMPLE / _MIN_VOTES — slightly smaller/looser
+    //                                   than the plain 1.0x pass: resampling
+    //                                   is a lossy linear interpolation, so a
+    //                                   genuine speed-changed match survives
+    //                                   with somewhat fewer intact hashes.
+    const SPEED_INVARIANT_ENABLED = (process.env.AUDIO_SPEED_INVARIANT_ENABLED || "true") !== "false";
+    const SPEED_HYPOTHESES = (process.env.AUDIO_SPEED_HYPOTHESES
+        || "0.75,1.25,0.8,1.2,0.67,1.5,0.5,2.0")
+      .split(",").map(s => parseFloat(s.trim())).filter(f => f > 0 && Math.abs(f - 1) > 0.001);
+    const SPEED_MAX_HYPOTHESES     = parseInt(process.env.AUDIO_SPEED_MAX_HYPOTHESES, 10)     || 4;
+    const SPEED_MATCH_QUERY_SAMPLE = parseInt(process.env.AUDIO_SPEED_MATCH_QUERY_SAMPLE, 10) || 60;
+    const SPEED_MATCH_MIN_VOTES    = parseInt(process.env.AUDIO_SPEED_MATCH_MIN_VOTES, 10)    || 7;
 
-      const step = Math.max(1, Math.floor(hashes.length / MATCH_QUERY_SAMPLE));
+    // Shared voting core used by both the plain 1.0x pass and every speed
+    // hypothesis pass — buckets by (sound_id, offsetBin), same as before.
+    // indexRoot lets this same function serve BOTH the user-generated sound
+    // index (audio_hash_index) and the licensed-catalog index
+    // (licensed_catalog_hash_index, see v6 copyright-detection below) —
+    // it's the same landmark-hash format either way, just a different tree.
+    async function voteHashes(hashes, querySampleSize, indexRoot) {
+      const db = admin.database();
+      const step = Math.max(1, Math.floor(hashes.length / querySampleSize));
       const sample = [];
-      for (let i = 0; i < hashes.length && sample.length < MATCH_QUERY_SAMPLE; i += step) {
+      for (let i = 0; i < hashes.length && sample.length < querySampleSize; i += step) {
         sample.push(hashes[i]);
       }
 
-      // Votes are bucketed by (sound_id, offsetBin) — NOT sound_id alone.
-      // A real match (even a short slice of a longer original) agrees on
-      // one consistent (refT - queryT) offset; unrelated collisions don't.
-      // See the big comment above setupAudioFingerprint for why.
       const votes = {};
       await Promise.all(sample.map(async ({ h, t: queryT }) => {
         try {
-          const snap = await db.ref(`audio_hash_index/${h}`).once("value");
+          const snap = await db.ref(`${indexRoot}/${h}`).once("value");
           if (!snap.exists()) return;
-          const matches = snap.val(); // { soundId: refFrameIndex, ... }
-          for (const [soundId, refT] of Object.entries(matches)) {
+          const matches = snap.val(); // { id: refFrameIndex, ... }
+          for (const [id, refT] of Object.entries(matches)) {
             if (typeof refT !== "number") continue; // guards old-format `true` entries pre-upgrade
             const deltaBin = Math.round((refT - queryT) / DELTA_BIN_HOPS);
-            const key = soundId + "|" + deltaBin;
+            const key = id + "|" + deltaBin;
             votes[key] = (votes[key] || 0) + 1;
           }
         } catch (_) { /* one bad lookup shouldn't sink the whole match */ }
@@ -776,25 +871,73 @@ app.post("/translate", (req, res) => {
       }
 
       const ratio = sample.length > 0 ? bestVotes / sample.length : 0;
-      const isMatch = !!bestId && bestVotes >= MATCH_MIN_VOTES && ratio >= MATCH_THRESHOLD;
+      return { bestId, bestVotes, bestDeltaBin, sampleSize: sample.length, ratio };
+    }
 
-      if (isMatch) {
-        const metaSnap = await db.ref(`audio_fingerprints/${bestId}`).once("value");
+    // Generic "match against an arbitrary hash index, with the same 1.0x +
+    // speed-hypothesis fallback used everywhere else in this module" core.
+    // Both matchOrCreateSoundId (user-sound index) and matchLicensedCatalog
+    // (v6, licensed-catalog index) are thin wrappers around this — same
+    // matching quality, different tree + different sensitivity thresholds.
+    async function findBestMatch({ hashes, pcmBuffer, indexRoot,
+                                    matchThreshold, matchMinVotes,
+                                    querySample, speedQuerySample, speedMinVotes }) {
+      let vote = await voteHashes(hashes, querySample, indexRoot);
+      let isMatch = !!vote.bestId && vote.bestVotes >= matchMinVotes && vote.ratio >= matchThreshold;
+      let speedFactor = 1.0;
+
+      if (!isMatch && SPEED_INVARIANT_ENABLED && pcmBuffer) {
+        for (const f of SPEED_HYPOTHESES.slice(0, SPEED_MAX_HYPOTHESES)) {
+          const resampled   = resamplePcmBySpeedFactor(pcmBuffer, f);
+          const speedHashes = computeFingerprintHashes(resampled);
+          if (speedHashes.length < MIN_HASHES_REQUIRED) continue;
+          const speedVote = await voteHashes(speedHashes, speedQuerySample, indexRoot);
+          const speedIsMatch = !!speedVote.bestId
+            && speedVote.bestVotes >= speedMinVotes
+            && speedVote.ratio >= matchThreshold;
+          if (speedIsMatch) {
+            vote = speedVote;
+            isMatch = true;
+            speedFactor = f;
+            break;
+          }
+        }
+      }
+
+      if (!isMatch) return null;
+      const offsetSec = Math.max(0, (vote.bestDeltaBin * DELTA_BIN_HOPS * HOP) / SAMPLE_RATE);
+      return {
+        id: vote.bestId, votes: vote.bestVotes, sampleSize: vote.sampleSize,
+        ratio: vote.ratio, offsetSec: Number(offsetSec.toFixed(2)), speedFactor
+      };
+    }
+
+    async function matchOrCreateSoundId({ hashes, pcmBuffer, ownerUid, reelId, newSoundId }) {
+      const db = admin.database();
+
+      const match = await findBestMatch({
+        hashes, pcmBuffer, indexRoot: "audio_hash_index",
+        matchThreshold: MATCH_THRESHOLD, matchMinVotes: MATCH_MIN_VOTES,
+        querySample: MATCH_QUERY_SAMPLE, speedQuerySample: SPEED_MATCH_QUERY_SAMPLE,
+        speedMinVotes: SPEED_MATCH_MIN_VOTES
+      });
+
+      if (match) {
+        const metaSnap = await db.ref(`audio_fingerprints/${match.id}`).once("value");
         const meta = metaSnap.val() || {};
-        // Where in the ORIGINAL track this upload's audio starts — lets the
-        // caller know it matched a portion of a longer sound, not just
-        // "some" match.
-        const offsetSec = Math.max(0, (bestDeltaBin * DELTA_BIN_HOPS * HOP) / SAMPLE_RATE);
-        console.log(`[audio-match] MATCHED sound=${bestId} votes=${bestVotes}/${sample.length} (${(ratio*100).toFixed(1)}%) offset=${offsetSec.toFixed(2)}s`);
-        return { matched: true, sound_id: bestId, owner_uid: meta.ownerUid || "", offset_sec: Number(offsetSec.toFixed(2)) };
+        console.log(`[audio-match] MATCHED sound=${match.id} votes=${match.votes}/${match.sampleSize} (${(match.ratio*100).toFixed(1)}%) offset=${match.offsetSec.toFixed(2)}s speed=${match.speedFactor}x`);
+        return {
+          matched: true, sound_id: match.id, owner_uid: meta.ownerUid || "",
+          offset_sec: match.offsetSec, speed_factor: match.speedFactor
+        };
       }
 
-      if (bestId) {
-        console.log(`[audio-match] no match (best was ${bestId} votes=${bestVotes}/${sample.length}, ${(ratio*100).toFixed(1)}% — below threshold)`);
-      }
+      console.log("[audio-match] no match in audio_hash_index (below threshold, speeds tried)");
 
       // No match — this becomes the new original. Use the ID the app already
       // intends to create in Firebase's sounds/ tree, so the two stay in sync.
+      // Always registered from the UNMODIFIED (1.0x) hashes — never from a
+      // resampled hypothesis — so the index stays a clean reference set.
       const soundId = newSoundId && newSoundId.trim() ? newSoundId : db.ref("audio_fingerprints").push().key;
 
       await db.ref(`audio_fingerprints/${soundId}`).set({
@@ -811,8 +954,169 @@ app.post("/translate", (req, res) => {
       for (const { h, t } of capped) updates[`audio_hash_index/${h}/${soundId}`] = t;
       if (Object.keys(updates).length) await db.ref().update(updates);
 
-      return { matched: false, sound_id: soundId, owner_uid: ownerUid || "", offset_sec: 0 };
+      return { matched: false, sound_id: soundId, owner_uid: ownerUid || "", offset_sec: 0, speed_factor: 1.0 };
     }
+
+    // ════════════════════════════════════════════════════════════════════
+    // v6: LICENSED-MUSIC CATALOG MATCH — Instagram/YouTube-Content-ID-style
+    // copyright detection, built on the SAME landmark-hash engine above.
+    //
+    // Separate namespace from the user-generated sound index on purpose:
+    //   licensed_catalog_hash_index/{hash}/{trackId} → refFrameIndex
+    //   licensed_catalog_meta/{trackId} → { title, artist, rightsHolder,
+    //                                        policy, addedAt, hashCount }
+    // Kept apart from audio_fingerprints/audio_hash_index so a licensed
+    // track NEVER gets treated as "some user's original sound" (wrong
+    // owner credit) and so the two catalogs can be moderated, sized, and
+    // cleared independently (a rights holder pulling a track shouldn't
+    // touch a single user-uploaded sound).
+    //
+    // STRICTER thresholds than the user-sound match: a false positive here
+    // has real consequences (muting/blocking a creator's own original
+    // audio), so LICENSED_MATCH_THRESHOLD/_MIN_VOTES default higher than
+    // the plain MATCH_* constants. Tune independently via env.
+    //
+    // HONEST SCOPE NOTE: this ships with an EMPTY catalog — there's no
+    // licensed reference audio bundled here (that has to come from an
+    // actual rights holder / licensing deal, not something this codebase
+    // can supply). What's here is the matching engine + an admin ingestion
+    // endpoint to register real licensed tracks once you have them, plus
+    // the copyright_match field wired into every /audio/match job result
+    // so the app has something to key its own mute/block UX off of the
+    // moment a real catalog gets loaded in.
+    // ════════════════════════════════════════════════════════════════════
+    const LICENSED_MATCH_ENABLED       = (process.env.AUDIO_LICENSED_MATCH_ENABLED || "true") !== "false";
+    const LICENSED_MATCH_THRESHOLD     = parseFloat(process.env.AUDIO_LICENSED_MATCH_THRESHOLD)     || 0.35;
+    const LICENSED_MATCH_MIN_VOTES     = parseInt(process.env.AUDIO_LICENSED_MATCH_MIN_VOTES, 10)   || 16;
+    const LICENSED_QUERY_SAMPLE        = parseInt(process.env.AUDIO_LICENSED_QUERY_SAMPLE, 10)      || 120;
+    const LICENSED_SPEED_QUERY_SAMPLE  = parseInt(process.env.AUDIO_LICENSED_SPEED_QUERY_SAMPLE, 10)|| 80;
+    const LICENSED_SPEED_MIN_VOTES     = parseInt(process.env.AUDIO_LICENSED_SPEED_MIN_VOTES, 10)   || 11;
+    const LICENSED_INDEX_HASH_CAP      = parseInt(process.env.AUDIO_LICENSED_INDEX_HASH_CAP, 10)    || 4000; // reference tracks are longer than a reel clip
+    const VALID_LICENSE_POLICIES = new Set(["mute", "block", "allow_credit"]);
+
+    async function matchLicensedCatalog({ hashes, pcmBuffer }) {
+      if (!LICENSED_MATCH_ENABLED) return null;
+      const match = await findBestMatch({
+        hashes, pcmBuffer, indexRoot: "licensed_catalog_hash_index",
+        matchThreshold: LICENSED_MATCH_THRESHOLD, matchMinVotes: LICENSED_MATCH_MIN_VOTES,
+        querySample: LICENSED_QUERY_SAMPLE, speedQuerySample: LICENSED_SPEED_QUERY_SAMPLE,
+        speedMinVotes: LICENSED_SPEED_MIN_VOTES
+      });
+      if (!match) return null;
+
+      const metaSnap = await admin.database().ref(`licensed_catalog_meta/${match.id}`).once("value");
+      if (!metaSnap.exists()) return null; // index/meta got out of sync — fail safe to "no match"
+      const meta = metaSnap.val();
+      console.log(`[copyright-match] MATCHED track=${match.id} "${meta.title || "?"}" votes=${match.votes}/${match.sampleSize} (${(match.ratio*100).toFixed(1)}%) speed=${match.speedFactor}x`);
+
+      return {
+        matched: true,
+        track_id: match.id,
+        title: meta.title || "",
+        artist: meta.artist || "",
+        rights_holder: meta.rightsHolder || "",
+        policy: meta.policy || "mute",
+        offset_sec: match.offsetSec,
+        speed_factor: match.speedFactor
+      };
+    }
+
+    // ── Admin ingestion: register a licensed reference track ───────────────
+    // Guarded by a shared-secret header (x-admin-key) checked against
+    // ADMIN_API_KEY — refuses ALL requests (500, not "open") if that env
+    // var isn't set, so this can never accidentally ship publicly writable.
+    function requireAdminKey(req, res) {
+      const configured = process.env.ADMIN_API_KEY;
+      if (!configured) {
+        res.status(500).json({ error: "ADMIN_API_KEY not configured on server" });
+        return false;
+      }
+      if (req.get("x-admin-key") !== configured) {
+        res.status(401).json({ error: "invalid or missing x-admin-key" });
+        return false;
+      }
+      return true;
+    }
+
+    const catalogUpload = multer({
+      dest: os.tmpdir(),
+      limits: { fileSize: 60 * 1024 * 1024 } // reference tracks can run longer than a reel clip
+    });
+
+    // POST /admin/licensed-catalog/add  (multipart/form-data, x-admin-key header)
+    //   file           — reference track audio (anything FFmpeg can decode)
+    //   title, artist, rights_holder — display metadata
+    //   policy         — "mute" | "block" | "allow_credit" (default "mute")
+    // Computes the SAME landmark hashes as a reel upload and stores them
+    // under licensed_catalog_hash_index — synchronous (admin/back-office
+    // path, not the hot upload path, so no async-queue needed here).
+    app.post("/admin/licensed-catalog/add", catalogUpload.single("file"), async (req, res) => {
+      if (!requireAdminKey(req, res)) return;
+      if (!firebaseReady) return res.status(503).json({ error: "Firebase not configured" });
+      if (!req.file) return res.status(400).json({ error: "file field required" });
+
+      const inputPath = req.file.path;
+      const { title = "", artist = "", rights_holder = "", policy = "mute" } = req.body;
+      const finalPolicy = VALID_LICENSE_POLICIES.has(policy) ? policy : "mute";
+
+      try {
+        const pcm = await extractPcmMono11025(inputPath);
+        const hashes = computeFingerprintHashes(pcm);
+        if (hashes.length < MIN_HASHES_REQUIRED) {
+          return res.status(400).json({ error: "audio too short/quiet to fingerprint reliably" });
+        }
+
+        const db = admin.database();
+        const trackId = db.ref("licensed_catalog_meta").push().key;
+
+        await db.ref(`licensed_catalog_meta/${trackId}`).set({
+          title, artist, rightsHolder: rights_holder, policy: finalPolicy,
+          addedAt: admin.database.ServerValue.TIMESTAMP,
+          hashCount: hashes.length
+        });
+
+        const capped = hashes.slice(0, LICENSED_INDEX_HASH_CAP);
+        const updates = {};
+        for (const { h, t } of capped) updates[`licensed_catalog_hash_index/${h}/${trackId}`] = t;
+        if (Object.keys(updates).length) await db.ref().update(updates);
+
+        res.json({ track_id: trackId, hash_count: hashes.length, policy: finalPolicy });
+      } catch (err) {
+        console.error("[/admin/licensed-catalog/add] failed:", err.message);
+        res.status(500).json({ error: err.message });
+      } finally {
+        try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (_) {}
+      }
+    });
+
+    // DELETE /admin/licensed-catalog/:trackId  (x-admin-key header) — pulls a
+    // track (rights dispute, license expired, etc). Removes its hash entries
+    // from the index one-by-one (no reverse index by trackId, so this walks
+    // the track's own stored hash list — cheap, it's just this one track's
+    // hashCount, not the whole index).
+    app.delete("/admin/licensed-catalog/:trackId", async (req, res) => {
+      if (!requireAdminKey(req, res)) return;
+      if (!firebaseReady) return res.status(503).json({ error: "Firebase not configured" });
+      try {
+        const db = admin.database();
+        const trackId = req.params.trackId;
+        const metaSnap = await db.ref(`licensed_catalog_meta/${trackId}`).once("value");
+        if (!metaSnap.exists()) return res.status(404).json({ error: "track not found" });
+
+        // No reverse index, so we can't cheaply find every hash entry that
+        // points at this trackId without a full index scan. Removing the
+        // meta node is enough to make future matches ignore it (see the
+        // metaSnap.exists() fail-safe check in matchLicensedCatalog above) —
+        // the now-orphaned hash entries just age out as harmless dead
+        // weight, same tradeoff INDEX_HASH_CAP already makes elsewhere.
+        await db.ref(`licensed_catalog_meta/${trackId}`).remove();
+        res.json({ removed: trackId });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+
 
     // ── ASYNC QUEUE ──────────────────────────────────────────────────────
     // WHY: FFT + PCM extraction is CPU-bound and, on Render's free/shared
@@ -849,21 +1153,208 @@ app.post("/translate", (req, res) => {
       }
     }
 
+    // ── v4: exact-byte cache (MD5) — skip FFT entirely on a repeat upload ──
+    // WHY: FFT + PCM extraction is the expensive part of this whole feature;
+    // an MD5 of the raw uploaded audio bytes is nearly free to compute and
+    // catches the common "literally the same file again" case — a repost,
+    // a retry, someone re-sharing the exact same video export — without
+    // touching ffmpeg or the hash index at all. This is a courtesy fast
+    // path, not a substitute for the perceptual fingerprint match above:
+    // a single re-encode/trim/speed-change changes the MD5 completely and
+    // falls straight through to the normal FFT pipeline, same as before
+    // this cache existed.
+    const FP_CACHE_ENABLED = (process.env.AUDIO_FP_CACHE_ENABLED || "true") !== "false";
+
+    function md5File(path) {
+      return new Promise((resolve, reject) => {
+        const hash = crypto.createHash("md5");
+        const stream = fs.createReadStream(path);
+        stream.on("data", (chunk) => hash.update(chunk));
+        stream.on("end", () => resolve(hash.digest("hex")));
+        stream.on("error", reject);
+      });
+    }
+
+    // Returns a {matched, sound_id, owner_uid, offset_sec, speed_factor,
+    // copyright_match} result built purely from the cache, or null on a
+    // miss / stale entry (soundId's audio_fingerprints/ record got deleted
+    // since — e.g. the original reel was removed — in which case we fall
+    // through to a real recompute rather than trust a dangling reference).
+    async function lookupAudioCache(md5, reelId) {
+      if (!FP_CACHE_ENABLED || !md5) return null;
+      const db = admin.database();
+      const snap = await db.ref(`audio_fingerprint_cache/${md5}`).once("value");
+      if (!snap.exists()) return null;
+      const cached = snap.val();
+      if (!cached.soundId || cached.reelId === reelId) return null; // don't self-match
+
+      const metaSnap = await db.ref(`audio_fingerprints/${cached.soundId}`).once("value");
+      if (!metaSnap.exists()) return null; // stale — original sound was deleted since
+      const meta = metaSnap.val() || {};
+
+      return {
+        matched: true,
+        sound_id: cached.soundId,
+        owner_uid: cached.ownerUid || meta.ownerUid || "",
+        offset_sec: 0,       // byte-identical audio — starts at the same point
+        speed_factor: 1.0,   // byte-identical audio — no speed adjustment needed
+        // Byte-identical audio must carry the SAME copyright verdict as
+        // whatever this exact file resolved to the first time it was
+        // checked — cached alongside soundId so a cache hit doesn't quietly
+        // skip copyright detection entirely.
+        copyright_match: cached.copyrightMatch || null
+      };
+    }
+
+    async function writeAudioCache(md5, { soundId, ownerUid, reelId, copyrightMatch }) {
+      if (!FP_CACHE_ENABLED || !md5 || !soundId) return;
+      try {
+        await admin.database().ref(`audio_fingerprint_cache/${md5}`).set({
+          soundId, ownerUid: ownerUid || null, reelId: reelId || null,
+          copyrightMatch: copyrightMatch || null,
+          createdAt: admin.database.ServerValue.TIMESTAMP
+        });
+      } catch (e) {
+        console.warn("[audio-match] cache write failed (non-fatal):", e.message);
+      }
+    }
+
+    // ── v5: trending-audio analytics ────────────────────────────────────
+    // Records one "usage event" for a sound_id every time a fingerprint job
+    // concludes — whether it matched an EXISTING sound (someone reused that
+    // audio) or minted a brand-new one (the first usage of itself). This is
+    // the single point every original-audio upload passes through (cache
+    // hit or full FFT compute), so it's a genuine, unbroken usage counter —
+    // NOT a duplicate of the client-side sounds/{id}/reel_count field,
+    // which only updates for explicit "Use this sound" picks off a sound
+    // page and never sees raw/matched uploads at all. Bucketed by day (UTC)
+    // so /audio/trending below can answer "trending over the last N days",
+    // not just "most-used all-time".
+    function utcDateKey(ts) {
+      return new Date(ts).toISOString().slice(0, 10); // "YYYY-MM-DD"
+    }
+
+    async function recordAudioMatchStat(soundId) {
+      if (!soundId) return;
+      try {
+        const day = utcDateKey(Date.now());
+        await admin.database().ref().update({
+          [`audio_match_stats/${soundId}/total`]: admin.database.ServerValue.increment(1),
+          [`audio_match_stats/${soundId}/daily/${day}`]: admin.database.ServerValue.increment(1),
+          [`audio_match_stats/${soundId}/lastMatchedAt`]: admin.database.ServerValue.TIMESTAMP
+        });
+      } catch (e) {
+        console.warn("[audio-match] trending-stat write failed (non-fatal):", e.message);
+      }
+    }
+
+    // Reads the whole audio_match_stats tree and sums each sound's daily
+    // buckets over the requested window. HONEST LIMITATION: this is an
+    // O(sounds × window) scan done at read time, not a maintained rolling
+    // top-K — perfectly fine at this app's scale (mirrors how /audio/match
+    // itself favors a simple correct approach over a bigger system, see the
+    // big comment above setupAudioFingerprint), but would want a
+    // periodically-recomputed leaderboard node instead if audio_match_stats
+    // ever grows into the tens of thousands of distinct sounds.
+    async function computeTrendingSounds(windowDays, limit) {
+      const db = admin.database();
+      const snap = await db.ref("audio_match_stats").once("value");
+      if (!snap.exists()) return [];
+
+      const cutoffKeys = new Set();
+      for (let i = 0; i < windowDays; i++) {
+        cutoffKeys.add(utcDateKey(Date.now() - i * 24 * 60 * 60 * 1000));
+      }
+
+      const stats = snap.val();
+      const ranked = [];
+      for (const soundId of Object.keys(stats)) {
+        const s = stats[soundId];
+        let windowCount = 0;
+        if (s.daily) {
+          for (const day of Object.keys(s.daily)) {
+            if (cutoffKeys.has(day)) windowCount += s.daily[day];
+          }
+        }
+        if (windowCount > 0) {
+          ranked.push({
+            sound_id: soundId,
+            window_count: windowCount,
+            total_count: s.total || 0,
+            last_matched_at: s.lastMatchedAt || null
+          });
+        }
+      }
+
+      ranked.sort((a, b) => b.window_count - a.window_count);
+      const top = ranked.slice(0, limit);
+
+      // Enrich with owner/reel metadata — one lookup per result, only for
+      // the page actually being returned (not the whole ranked list).
+      await Promise.all(top.map(async (entry) => {
+        const metaSnap = await db.ref(`audio_fingerprints/${entry.sound_id}`).once("value");
+        const meta = metaSnap.val() || {};
+        entry.owner_uid  = meta.ownerUid || "";
+        entry.reel_id    = meta.reelId || "";
+        entry.hash_count = meta.hashCount || 0;
+        entry.created_at = meta.createdAt || null;
+      }));
+
+      return top;
+    }
+
     async function runFingerprintJob({ jobId, inputPath, uid, reelId, newSoundId }) {
       const db = admin.database();
       const jobRef = db.ref(`audio_match_jobs/${jobId}`);
       try {
         await jobRef.update({ status: "processing" });
 
-        const pcm = await extractPcmMono11025(inputPath);
-        const hashes = computeFingerprintHashes(pcm);
+        // ── Cache check FIRST — before spending anything on ffmpeg/FFT ────
+        const md5 = await md5File(inputPath).catch((e) => {
+          console.warn("[audio-match] md5 hash failed (non-fatal):", e.message);
+          return null;
+        });
 
-        let result;
-        if (hashes.length < MIN_HASHES_REQUIRED) {
-          result = { matched: false, sound_id: newSoundId || "", owner_uid: uid, offset_sec: 0 };
+        let result = await lookupAudioCache(md5, reelId).catch((e) => {
+          console.warn("[audio-match] cache lookup failed (non-fatal):", e.message);
+          return null;
+        });
+
+        if (result) {
+          console.log(`[audio-match] CACHE HIT md5=${md5.slice(0, 12)}… → sound=${result.sound_id} (skipped FFT)`);
         } else {
-          result = await matchOrCreateSoundId({ hashes, ownerUid: uid, reelId, newSoundId });
+          const pcm = await extractPcmMono11025(inputPath);
+          const hashes = computeFingerprintHashes(pcm);
+
+          if (hashes.length < MIN_HASHES_REQUIRED) {
+            result = { matched: false, sound_id: newSoundId || "", owner_uid: uid, offset_sec: 0, speed_factor: 1.0, copyright_match: null };
+          } else {
+            result = await matchOrCreateSoundId({ hashes, pcmBuffer: pcm, ownerUid: uid, reelId, newSoundId });
+            // v6: also check against the licensed-music catalog — runs on
+            // the SAME hashes/pcm already computed above, no extra ffmpeg
+            // call. Independent of whether the user-sound match above found
+            // anything (a "genuinely new" upload can still be someone's
+            // raw-uploaded copyrighted song — that's exactly the case this
+            // is meant to catch).
+            result.copyright_match = await matchLicensedCatalog({ hashes, pcmBuffer: pcm }).catch((e) => {
+              console.warn("[copyright-match] check failed (non-fatal):", e.message);
+              return null;
+            });
+          }
+
+          // Cache the outcome under this file's exact bytes — whether it
+          // matched an existing sound or minted a new one — so the next
+          // byte-identical upload short-circuits straight past FFT.
+          await writeAudioCache(md5, {
+            soundId: result.sound_id, ownerUid: result.owner_uid, reelId,
+            copyrightMatch: result.copyright_match
+          });
         }
+
+        // Trending analytics — one usage event per job, cache hit or not
+        // (a cache hit is just as real a "this audio got used again" event
+        // as a fresh FFT match, so it counts the same way).
+        await recordAudioMatchStat(result.sound_id);
 
         await jobRef.update({
           status: "done",
@@ -871,6 +1362,8 @@ app.post("/translate", (req, res) => {
           sound_id: result.sound_id,
           owner_uid: result.owner_uid,
           offset_sec: result.offset_sec || 0,
+          speed_factor: result.speed_factor || 1.0,
+          copyright_match: result.copyright_match || null,
           completedAt: admin.database.ServerValue.TIMESTAMP
         });
       } catch (err) {
@@ -909,6 +1402,33 @@ app.post("/translate", (req, res) => {
           console.warn("[audio-match] job cleanup failed:", e.message);
         }
       }, 15 * 60 * 1000); // every 15 min
+    }
+
+    // Housekeeping: sweep MD5 cache entries older than FP_CACHE_TTL_MS.
+    // Long TTL — this cache's correctness doesn't depend on freshness (a
+    // stale-but-valid entry is just as correct as a fresh one; the only
+    // real staleness check is "does the sound it points to still exist",
+    // already handled per-lookup in lookupAudioCache above). This sweep
+    // just bounds total node count over very long timescales.
+    const FP_CACHE_TTL_MS = parseInt(process.env.AUDIO_FP_CACHE_TTL_MS, 10) || 90 * 24 * 60 * 60 * 1000;
+    if (firebaseReady && FP_CACHE_ENABLED) {
+      setInterval(async () => {
+        try {
+          const db = admin.database();
+          const snap = await db.ref("audio_fingerprint_cache").once("value");
+          if (!snap.exists()) return;
+          const now = Date.now();
+          const entries = snap.val();
+          const updates = {};
+          for (const md5 of Object.keys(entries)) {
+            const ts = entries[md5].createdAt;
+            if (ts && now - ts > FP_CACHE_TTL_MS) updates[md5] = null;
+          }
+          if (Object.keys(updates).length) await db.ref("audio_fingerprint_cache").update(updates);
+        } catch (e) {
+          console.warn("[audio-match] cache cleanup failed:", e.message);
+        }
+      }, 6 * 60 * 60 * 1000); // every 6 hours — this one's low-urgency
     }
 
     const matchUpload = multer({
@@ -964,7 +1484,58 @@ app.post("/translate", (req, res) => {
       }
     });
 
+    // GET /audio/trending?days=7&limit=20 — "trending sounds" feed, ranked
+    // by usage-event count (see recordAudioMatchStat) over the requested
+    // trailing window. Response: { window_days, sounds: [ { sound_id,
+    // owner_uid, reel_id, window_count, total_count, hash_count,
+    // created_at, last_matched_at } ... ] }, sorted highest window_count
+    // first — ready to feed straight into a "Trending Sounds" list UI.
+    app.get("/audio/trending", async (req, res) => {
+      if (!firebaseReady) return res.status(503).json({ error: "Firebase not configured" });
+      const days  = Math.min(90, Math.max(1, parseInt(req.query.days, 10)  || 7));
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+      try {
+        const sounds = await computeTrendingSounds(days, limit);
+        res.json({ window_days: days, sounds });
+      } catch (err) {
+        console.error("[/audio/trending] failed:", err.message);
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // Housekeeping: prune daily usage buckets older than STATS_DAILY_TTL_MS
+    // so audio_match_stats/{soundId}/daily doesn't grow forever — the
+    // lifetime `total` counter is untouched, only the day-by-day breakdown
+    // used for the trending window gets trimmed.
+    const STATS_DAILY_TTL_MS = parseInt(process.env.AUDIO_STATS_DAILY_TTL_MS, 10) || 120 * 24 * 60 * 60 * 1000;
+    if (firebaseReady) {
+      setInterval(async () => {
+        try {
+          const db = admin.database();
+          const snap = await db.ref("audio_match_stats").once("value");
+          if (!snap.exists()) return;
+          const now = Date.now();
+          const stats = snap.val();
+          const updates = {};
+          for (const soundId of Object.keys(stats)) {
+            const daily = stats[soundId].daily;
+            if (!daily) continue;
+            for (const day of Object.keys(daily)) {
+              const dayMs = Date.parse(day + "T00:00:00Z");
+              if (dayMs && now - dayMs > STATS_DAILY_TTL_MS) {
+                updates[`${soundId}/daily/${day}`] = null;
+              }
+            }
+          }
+          if (Object.keys(updates).length) await db.ref("audio_match_stats").update(updates);
+        } catch (e) {
+          console.warn("[audio-match] stats cleanup failed:", e.message);
+        }
+      }, 24 * 60 * 60 * 1000); // once a day — this one's very low-urgency
+    }
+
     console.log(`[OK] /audio/match endpoint ready (async queue, concurrency=${FP_QUEUE_CONCURRENCY})`);
+    console.log("[OK] /audio/trending endpoint ready");
   })();
 })();
 
