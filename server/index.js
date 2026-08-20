@@ -496,6 +496,246 @@ app.post("/translate", (req, res) => {
   });
 
   console.log("[OK] /compress/video endpoint ready");
+
+  // ════════════════════════════════════════════════════════════════════════
+  // AUDIO FINGERPRINT MATCHING — Instagram-style "same audio, no explicit
+  // 'Use Audio' pick" detection.
+  //
+  // Case this solves: A posts a reel, its audio becomes sounds/orig_{A's
+  // reelId}. B has the SAME video file (or just the same audio track) and
+  // uploads it raw — never taps "Use this sound". Without this, B's reel
+  // silently mints its OWN "orig_{B's reelId}" sound and the two reels never
+  // link up. With this, B's upload gets fingerprinted, matched against A's
+  // fingerprint, and B's reel is linked to A's existing sound instead.
+  //
+  // WHY THIS APPROACH (free, no native binary dependency):
+  //   - No paid ACR service, no fpcalc/chromaprint system binary to install
+  //     on Render (that binary isn't reliably available there) — just a
+  //     pure-Node FFT + a Shazam-style "peak frequency per band per frame"
+  //     landmark hash, using the FFmpeg binary we already ship for /compress.
+  //   - Matching uses an INVERTED INDEX (audio_hash_index/{hash} → sound_id)
+  //     in the same Firebase RTDB already used everywhere else in this file,
+  //     so a new upload only needs to look up a small sample of its own
+  //     hashes rather than compare against every stored fingerprint.
+  //
+  // POST /audio/match  (multipart/form-data)
+  //   file          — extracted audio (m4a/aac; anything FFmpeg can decode)
+  //   uid           — uploader's uid
+  //   reel_id       — this reel's id
+  //   new_sound_id  — id the app will use if this turns out to be a genuinely
+  //                   NEW original (Android sends "orig_{reelId}" — see
+  //                   VideoUploader.uploadOriginalAudio). Keeping this ID
+  //                   space shared between Firebase sounds/{id} and this
+  //                   fingerprint index is what lets a MATCH's sound_id be
+  //                   used directly as an existing sounds/{id} lookup.
+  //
+  // Response: { matched, sound_id, owner_uid }
+  //   matched=true  → sound_id belongs to an EARLIER reel's audio (possibly
+  //                   this same uploader's own earlier reel); owner_uid is
+  //                   that original creator.
+  //   matched=false → sound_id === the new_sound_id you sent; this upload
+  //                   is now registered as the original for future matches;
+  //                   owner_uid === uid you sent.
+  // ════════════════════════════════════════════════════════════════════════
+  (function setupAudioFingerprint() {
+
+    // ── Tiny in-place radix-2 FFT (Cooley-Tukey), no dependency needed ──────
+    function fftRadix2(re, im) {
+      const n = re.length;
+      for (let i = 1, j = 0; i < n; i++) {
+        let bit = n >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) {
+          let tr = re[i]; re[i] = re[j]; re[j] = tr;
+          let ti = im[i]; im[i] = im[j]; im[j] = ti;
+        }
+      }
+      for (let len = 2; len <= n; len <<= 1) {
+        const ang = -2 * Math.PI / len;
+        const wr  = Math.cos(ang), wi = Math.sin(ang);
+        for (let i = 0; i < n; i += len) {
+          let curWr = 1, curWi = 0;
+          const half = len / 2;
+          for (let j = 0; j < half; j++) {
+            const ur = re[i + j],        ui = im[i + j];
+            const vr = re[i + j + half] * curWr - im[i + j + half] * curWi;
+            const vi = re[i + j + half] * curWi + im[i + j + half] * curWr;
+            re[i + j]        = ur + vr; im[i + j]        = ui + vi;
+            re[i + j + half] = ur - vr; im[i + j + half] = ui - vi;
+            const nwr = curWr * wr - curWi * wi;
+            const nwi = curWr * wi + curWi * wr;
+            curWr = nwr; curWi = nwi;
+          }
+        }
+      }
+    }
+
+    // ── FFmpeg: extract mono 11025Hz raw PCM (s16le) from any audio/video ──
+    function extractPcmMono11025(inputPath) {
+      return new Promise((resolve, reject) => {
+        const outPath = inputPath + "_fp.pcm";
+        ffmpeg(inputPath)
+          .noVideo()
+          .audioChannels(1)
+          .audioFrequency(11025)
+          .outputOptions(["-f", "s16le", "-acodec", "pcm_s16le"])
+          .on("end", () => {
+            try {
+              const buf = fs.readFileSync(outPath);
+              fs.unlink(outPath, () => {});
+              resolve(buf);
+            } catch (e) { reject(e); }
+          })
+          .on("error", reject)
+          .save(outPath);
+      });
+    }
+
+    // ── Shazam-style landmark hash: peak bin per frequency band per frame ──
+    const FFT_SIZE = 1024;
+    const HOP      = 512;
+    // Bin ranges tuned for 11025Hz / 1024-pt FFT (bin width ≈ 10.77 Hz)
+    const BANDS = [[3, 10], [10, 20], [20, 40], [40, 80], [80, 180]];
+
+    function computeFingerprintHashes(pcmBuffer) {
+      const numSamples = Math.floor(pcmBuffer.length / 2); // 16-bit samples
+      if (numSamples < FFT_SIZE) return [];
+
+      const window = new Float64Array(FFT_SIZE);
+      for (let i = 0; i < FFT_SIZE; i++) {
+        window[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (FFT_SIZE - 1));
+      }
+
+      const hashes = new Set();
+      const re = new Float64Array(FFT_SIZE);
+      const im = new Float64Array(FFT_SIZE);
+
+      for (let start = 0; start + FFT_SIZE <= numSamples; start += HOP) {
+        for (let i = 0; i < FFT_SIZE; i++) {
+          const s = pcmBuffer.readInt16LE((start + i) * 2) / 32768;
+          re[i] = s * window[i];
+          im[i] = 0;
+        }
+        fftRadix2(re, im);
+
+        const peaks = [];
+        for (const [lo, hi] of BANDS) {
+          let maxMag = -1, maxBin = lo;
+          for (let b = lo; b <= hi && b < FFT_SIZE / 2; b++) {
+            const mag = re[b] * re[b] + im[b] * im[b];
+            if (mag > maxMag) { maxMag = mag; maxBin = b; }
+          }
+          peaks.push(maxBin);
+        }
+
+        const hash = ((peaks[0] & 0xFF)) |
+                     ((peaks[1] & 0xFF) << 8) |
+                     ((peaks[2] & 0xFF) << 16) |
+                     ((peaks[3] & 0xFF) << 24);
+        const hash2 = (hash ^ Math.imul(peaks[4] & 0xFF, 2654435761)) >>> 0;
+        hashes.add(String(hash2));
+      }
+      return Array.from(hashes);
+    }
+
+    // ── Match against the inverted index, or register as new ───────────────
+    const MATCH_QUERY_SAMPLE  = 60;   // hashes actually queried — keeps latency sane
+    const MATCH_THRESHOLD     = 0.30; // fraction of sampled hashes that must hit the same sound
+    const INDEX_HASH_CAP      = 400;  // hashes stored per NEW sound — keeps index writes bounded
+    const MIN_HASHES_REQUIRED = 20;   // shorter than this = likely silence/near-empty audio
+
+    async function matchOrCreateSoundId({ hashes, ownerUid, reelId, newSoundId }) {
+      const db = admin.database();
+
+      const step = Math.max(1, Math.floor(hashes.length / MATCH_QUERY_SAMPLE));
+      const sample = [];
+      for (let i = 0; i < hashes.length && sample.length < MATCH_QUERY_SAMPLE; i += step) {
+        sample.push(hashes[i]);
+      }
+
+      const votes = {};
+      await Promise.all(sample.map(async h => {
+        try {
+          const snap = await db.ref(`audio_hash_index/${h}`).once("value");
+          if (!snap.exists()) return;
+          const matches = snap.val();
+          for (const soundId of Object.keys(matches)) {
+            votes[soundId] = (votes[soundId] || 0) + 1;
+          }
+        } catch (_) { /* one bad lookup shouldn't sink the whole match */ }
+      }));
+
+      let bestId = null, bestVotes = 0;
+      for (const [soundId, count] of Object.entries(votes)) {
+        if (count > bestVotes) { bestVotes = count; bestId = soundId; }
+      }
+
+      if (bestId && sample.length > 0 && (bestVotes / sample.length) >= MATCH_THRESHOLD) {
+        const metaSnap = await db.ref(`audio_fingerprints/${bestId}`).once("value");
+        const meta = metaSnap.val() || {};
+        return { matched: true, sound_id: bestId, owner_uid: meta.ownerUid || "" };
+      }
+
+      // No match — this becomes the new original. Use the ID the app already
+      // intends to create in Firebase's sounds/ tree, so the two stay in sync.
+      const soundId = newSoundId && newSoundId.trim() ? newSoundId : db.ref("audio_fingerprints").push().key;
+
+      await db.ref(`audio_fingerprints/${soundId}`).set({
+        ownerUid:  ownerUid || null,
+        reelId:    reelId || null,
+        createdAt: admin.database.ServerValue.TIMESTAMP,
+        hashCount: hashes.length
+      });
+
+      const capped = hashes.slice(0, INDEX_HASH_CAP);
+      const updates = {};
+      for (const h of capped) updates[`audio_hash_index/${h}/${soundId}`] = true;
+      if (Object.keys(updates).length) await db.ref().update(updates);
+
+      return { matched: false, sound_id: soundId, owner_uid: ownerUid || "" };
+    }
+
+    const matchUpload = multer({
+      dest: os.tmpdir(),
+      limits: { fileSize: 30 * 1024 * 1024 } // 30 MB — audio-only file, small
+    });
+
+    app.post("/audio/match", matchUpload.single("file"), async (req, res) => {
+      if (!firebaseReady) {
+        return res.status(503).json({ error: "Firebase not configured" });
+      }
+      if (!req.file) {
+        return res.status(400).json({ error: "file field required" });
+      }
+
+      const inputPath = req.file.path;
+      const { uid = "", reel_id = "", new_sound_id = "" } = req.body;
+
+      try {
+        const pcm = await extractPcmMono11025(inputPath);
+        const hashes = computeFingerprintHashes(pcm);
+
+        if (hashes.length < MIN_HASHES_REQUIRED) {
+          return res.json({ matched: false, sound_id: new_sound_id || "", owner_uid: uid });
+        }
+
+        const result = await matchOrCreateSoundId({
+          hashes, ownerUid: uid, reelId: reel_id, newSoundId: new_sound_id
+        });
+        res.json(result);
+      } catch (err) {
+        console.error("[/audio/match] failed:", err.message);
+        // Non-fatal by design — caller (VideoUploader.java) falls back to
+        // "new original audio" on any error, same as before this feature.
+        res.status(500).json({ error: err.message });
+      } finally {
+        try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (_) {}
+      }
+    });
+
+    console.log("[OK] /audio/match endpoint ready");
+  })();
 })();
 
 // ══════════════════════════════════════════════════════════════════════════════
