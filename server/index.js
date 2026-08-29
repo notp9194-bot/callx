@@ -2259,6 +2259,112 @@ app.post("/notify/reel", async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Reels feed ranking — server-side scoring (Instagram-style approach)
+// POST /reels/rank
+//
+// WHY THIS EXISTS:
+// Client already keeps a fast, session-local "seen" cache (LRU, see
+// SeenReelsLruCache.java on Android) purely so it doesn't hammer Firebase
+// with a read on every card during fast scrolling — that cache is throwaway
+// and resets when the process dies. The PERMANENT seen record was already
+// being written straight to Firebase by HomeFeedWatchTracker
+// (reelWatchHistory/{uid}/{reelId} = timestamp), so this endpoint does NOT
+// duplicate that write path — it only READS it, same as Instagram's ranker
+// reads its own watch-history store rather than trusting the client.
+//
+// WHAT IT DOES:
+// Client sends a batch of candidate reelIds it's about to show (e.g. the
+// next page of the Home/Explore feed). Server reads each reel's engagement
+// counters + each reel's last-seen timestamp for this uid (if any), computes
+// a single score per reel, and returns the same IDs sorted best-first. This
+// mirrors Instagram's actual split: client only ever holds a short-lived
+// local cache; the durable "have they seen this" record and the ranking
+// math both live server-side.
+//
+// SCORING (deliberately simple — a real ranker is an ML model, this is a
+// transparent heuristic that's easy to tune):
+//   engagementScore = likesCount*1 + commentsCount*2 + sharesCount*3 + viewsCount*0.05
+//   recencyScore     = 100 when <1h old, decaying toward 0 over ~7 days
+//   base             = engagementScore*0.6 + recencyScore*0.4
+//   seen penalty:
+//     never seen              → base * 1.0
+//     seen within last 24h    → base * 0.15   (Instagram rarely re-shows same-day)
+//     seen 1–7 days ago       → base * 0.5
+//     seen 7+ days ago        → base * 0.85   (mostly fine to resurface)
+//
+// Body: { uid: string, candidates: string[] }  (candidates capped at 200/call)
+// Response: { ranked: [{ reelId, score, seen }] }  sorted best-first
+// ══════════════════════════════════════════════════════════════════════════════
+const REEL_RANK_MAX_CANDIDATES = 200;
+
+function reelEngagementScore(reelData) {
+  if (!reelData) return 0;
+  const likes    = Number(reelData.likesCount)    || 0;
+  const comments = Number(reelData.commentsCount) || 0;
+  const shares   = Number(reelData.sharesCount)   || 0;
+  const views    = Number(reelData.viewsCount)    || 0;
+  return likes * 1 + comments * 2 + shares * 3 + views * 0.05;
+}
+
+function reelRecencyScore(reelData, now) {
+  const ts = Number(reelData && reelData.timestamp) || 0;
+  if (!ts) return 0;
+  const ageHours = Math.max(0, (now - ts) / (60 * 60 * 1000));
+  if (ageHours < 1) return 100;
+  // Decays from 100 → ~0 over roughly 7 days (168h); smooth, no cliff.
+  return Math.max(0, 100 / (1 + ageHours / 24));
+}
+
+function reelSeenMultiplier(lastSeenTs, now) {
+  if (!lastSeenTs) return 1.0;              // never seen
+  const ageMs = now - lastSeenTs;
+  const DAY = 24 * 60 * 60 * 1000;
+  if (ageMs < DAY)      return 0.15;         // seen today — heavily deprioritize
+  if (ageMs < 7 * DAY)  return 0.5;          // seen this week — moderate penalty
+  return 0.85;                               // seen a while ago — mostly fine again
+}
+
+app.post("/reels/rank", async (req, res) => {
+  try {
+    if (!firebaseReady) return res.status(503).json({ error: "firebase not ready" });
+
+    const { uid = "", candidates = [] } = req.body || {};
+    if (!uid) return res.status(400).json({ error: "uid required" });
+    if (!Array.isArray(candidates) || candidates.length === 0)
+      return res.status(400).json({ error: "candidates[] required" });
+
+    const ids = candidates.slice(0, REEL_RANK_MAX_CANDIDATES).filter(Boolean);
+    const db  = admin.database();
+    const now = Date.now();
+
+    // One read for this user's whole watch-history map (cheap — indexed by
+    // uid already), instead of one read per candidate reel.
+    const historySnap = await db.ref("reelWatchHistory/" + uid).once("value");
+    const history = historySnap.exists() ? historySnap.val() : {};
+
+    // Reel metadata reads run in parallel — this is the only per-candidate
+    // Firebase cost, same as any feed query would already pay.
+    const reelSnaps = await Promise.all(
+      ids.map(id => db.ref("reels/" + id).once("value"))
+    );
+
+    const ranked = ids.map((id, i) => {
+      const reelData = reelSnaps[i].exists() ? reelSnaps[i].val() : null;
+      const lastSeenTs = history[id] || null;
+      const base   = reelEngagementScore(reelData) * 0.6 + reelRecencyScore(reelData, now) * 0.4;
+      const score  = base * reelSeenMultiplier(lastSeenTs, now);
+      return { reelId: id, score: Math.round(score * 100) / 100, seen: !!lastSeenTs };
+    });
+
+    ranked.sort((a, b) => b.score - a.score);
+    res.json({ ranked });
+  } catch (e) {
+    console.error("reels/rank err:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Notify X feature — like, retweet, reply, mention, quote, follow, dm,
 //                    poll_ended, list_added, space_started, close_friend_post
 // POST /notify/x
