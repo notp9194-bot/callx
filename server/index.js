@@ -3095,12 +3095,16 @@ app.post("/notify/group_join", async (req, res) => {
 // distribution (member added) sooner than waiting for that member to next
 // open the group's chat screen, which is the correctness fallback either way.
 //
-// Called by GroupInfoActivity right after a member is removed or leaves.
-// Payload: groupId, excludeUid (the member who was just removed/left — skip
-// notifying them, they no longer have a session worth re-syncing).
-// Android: type="group_key_resync" → CallxMessagingService should call
+// Called by GroupInfoActivity right after a member is added, removed, or
+// leaves (PushNotify#notifyGroupKeyRotate). Payload: groupId, excludeUid
+// (optional — the member who was just removed/left, skipped since they no
+// longer have a session worth re-syncing; omitted/empty on member-add, which
+// notifies everyone including the new member).
+// Android: type="group_key_resync" → CallxMessagingService now handles this
+// on receipt by calling
 // GroupE2EManager.getInstance(ctx).ensureGroupCrypto(groupId, myUid, null)
-// on receipt (data-only push, no visible notification).
+// (data-only push, no visible notification) — this was previously a no-op
+// gap; the client wiring is done as of the WhatsApp-level decrypt-self-heal fix.
 // ══════════════════════════════════════════════════════════════════════════════
 app.post("/notify/group_key_rotate", async (req, res) => {
   if (!firebaseReady)
