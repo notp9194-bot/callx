@@ -223,9 +223,56 @@ app.get("/ping", (req, res) =>
   res.json({ ok: true, time: Date.now() }));
 
 // ══════════════════════════════════════════════════════════════════════════════
+// MEDIA CONTENT-HASH DEDUP — WhatsApp-style instant forward/re-send
+//
+// WHY: without this, sending/forwarding the exact same file always paid a
+// fresh Cloudinary upload — even a file THIS server had already stored for
+// some other user. WhatsApp hashes the file client-side first and, on a
+// hash match, skips the upload entirely and reuses the existing URL.
+//
+// STORAGE: media_dedup/{sha256Hex} = {
+//   secureUrl, thumbnailUrl, publicId, resourceType, format, bytes,
+//   durationMs, folder, registeredBy, createdAt
+// }
+// Firebase rule should lock this node to server-only access (no client
+// reads/writes), same as e2e_prekeys below — everything here goes through
+// server-authenticated endpoints instead.
+//
+// PERF: the server-wide dedup CHECK is deliberately NOT its own endpoint
+// call on the hot path — it's merged straight into /cloudinary/sign below
+// (client sends an optional `hash` field; response gains a `dedup` flag).
+// Every upload calls /cloudinary/sign regardless (it needs the signature),
+// so piggybacking the dedup check there means a brand-new file costs
+// exactly the SAME one round trip it always did, and a duplicate file
+// resolves in that same one round trip instead of needing a signature
+// afterwards. A separate /media/dedup-lookup call would have doubled the
+// round trips for every single upload just to save one on a hit — the
+// merged version has no such downside on a miss. See the Android
+// MediaDedupManager class doc for the matching client-side tiers.
+//
+// /media/dedup-register (below) stays a separate, fire-and-forget call —
+// it happens once per successful upload, off the hot path, so there's
+// nothing to gain by merging it into anything else.
+// ══════════════════════════════════════════════════════════════════════════════
+const MEDIA_DEDUP_NODE = "media_dedup";
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
+
+/** Looks up a content hash in the dedup index. Returns the stored record or null. Never throws — a lookup failure should degrade to "just upload normally", not fail the request. */
+async function lookupMediaDedup(hash) {
+  if (!firebaseReady || !hash || !SHA256_HEX_RE.test(hash)) return null;
+  try {
+    const snap = await admin.database().ref(`${MEDIA_DEDUP_NODE}/${hash}`).once("value");
+    return snap.exists() ? snap.val() : null;
+  } catch (e) {
+    console.error("[dedup] lookup failed:", e.message);
+    return null;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Cloudinary signed upload
 // ══════════════════════════════════════════════════════════════════════════════
-app.post("/cloudinary/sign", (req, res) => {
+app.post("/cloudinary/sign", async (req, res) => {
   if (!cloudReady) {
     return res.status(503).json({
       error: "Cloudinary not configured",
@@ -241,12 +288,24 @@ app.post("/cloudinary/sign", (req, res) => {
   // timestamp) exactly like /cloudinary/sign/video already does below, or
   // Cloudinary rejects the upload with an invalid-signature error.
   const eager        = (req.body && req.body.eager) || "";
+
+  // Content-hash dedup check — see the class-level comment above. `hash` is
+  // never part of the signed string; it's purely a server-side lookup key.
+  const hash = ((req.body && req.body.hash) || "").toString().toLowerCase();
+  if (hash) {
+    const dedupResult = await lookupMediaDedup(hash);
+    if (dedupResult) {
+      return res.json({ dedup: true, result: dedupResult });
+    }
+  }
+
   const timestamp    = Math.floor(Date.now() / 1000).toString();
   let toSign          = `folder=${folder}&timestamp=${timestamp}`;
   if (eager) toSign = `eager=${eager}&` + toSign;
   const signature    = crypto.createHash("sha1")
     .update(toSign + CLOUD_SEC).digest("hex");
   res.json({
+    dedup: false,
     signature, timestamp,
     api_key:       CLOUD_KEY,
     cloud_name:    CLOUD_NAME,
@@ -259,10 +318,10 @@ app.post("/cloudinary/sign", (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 // Cloudinary VIDEO signed upload — eager transform support
 // POST /cloudinary/sign/video
-// Body: { folder, eager }
-// Response: { signature, timestamp, api_key, cloud_name, folder, eager }
+// Body: { folder, eager, hash? }
+// Response: { dedup: true, result } | { dedup: false, signature, timestamp, api_key, cloud_name, folder, eager }
 // ══════════════════════════════════════════════════════════════════════════════
-app.post("/cloudinary/sign/video", (req, res) => {
+app.post("/cloudinary/sign/video", async (req, res) => {
   if (!cloudReady) {
     return res.status(503).json({
       error: "Cloudinary not configured",
@@ -271,6 +330,15 @@ app.post("/cloudinary/sign/video", (req, res) => {
   }
   const folder    = (req.body && req.body.folder) || "callx/videos/file";
   const eager     = (req.body && req.body.eager)  || "";
+
+  const hash = ((req.body && req.body.hash) || "").toString().toLowerCase();
+  if (hash) {
+    const dedupResult = await lookupMediaDedup(hash);
+    if (dedupResult) {
+      return res.json({ dedup: true, result: dedupResult });
+    }
+  }
+
   const timestamp = Math.floor(Date.now() / 1000).toString();
 
   // Signature string — eager include karo agar present hai
@@ -281,12 +349,68 @@ app.post("/cloudinary/sign/video", (req, res) => {
     .update(toSign + CLOUD_SEC).digest("hex");
 
   res.json({
+    dedup: false,
     signature, timestamp,
     api_key:    CLOUD_KEY,
     cloud_name: CLOUD_NAME,
     folder,
     eager
   });
+});
+
+// POST /media/dedup-lookup — kept for any caller that wants a standalone
+// hash check without going through /cloudinary/sign (the main upload path
+// no longer needs it — see the class comment above). Same auth + shape as
+// before.
+// Body: { hash }  (sha256 hex of the exact bytes about to be uploaded)
+// Response: { found: false } | { found: true, result: {...} }
+app.post("/media/dedup-lookup", verifyFirebaseAuth, async (req, res) => {
+  const hash = ((req.body && req.body.hash) || "").toString().toLowerCase();
+  if (!SHA256_HEX_RE.test(hash)) {
+    return res.status(400).json({ error: "hash must be a 64-char sha256 hex digest" });
+  }
+  const result = await lookupMediaDedup(hash);
+  res.json(result ? { found: true, result } : { found: false });
+});
+
+// POST /media/dedup-register
+// Body: { hash, secureUrl, thumbnailUrl?, publicId?, resourceType?, format?,
+//         bytes?, durationMs?, folder? }
+// Response: { ok: true }
+app.post("/media/dedup-register", verifyFirebaseAuth, async (req, res) => {
+  if (!firebaseReady) return res.status(503).json({ error: "Firebase not configured" });
+  const {
+    hash, secureUrl, thumbnailUrl, publicId, resourceType,
+    format, bytes, durationMs, folder
+  } = req.body || {};
+  const h = (hash || "").toString().toLowerCase();
+  if (!SHA256_HEX_RE.test(h)) {
+    return res.status(400).json({ error: "hash must be a 64-char sha256 hex digest" });
+  }
+  if (!secureUrl) return res.status(400).json({ error: "secureUrl is required" });
+  try {
+    const db  = admin.database();
+    const ref = db.ref(`${MEDIA_DEDUP_NODE}/${h}`);
+    // Race-safe: first registration wins, every later one for the same
+    // hash is a harmless no-op — the stored URL already serves identical
+    // bytes, so there's nothing meaningful to overwrite it with.
+    await ref.transaction(cur => cur || {
+      secureUrl,
+      thumbnailUrl: thumbnailUrl || null,
+      publicId:     publicId     || null,
+      resourceType: resourceType || null,
+      format:       format       || null,
+      bytes:        bytes        || null,
+      durationMs:   durationMs   || null,
+      folder:       folder       || null,
+      registeredBy: req.uid,
+      createdAt:    admin.database.ServerValue.TIMESTAMP
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[/media/dedup-register] failed:", e.message);
+    res.status(500).json({ error: "internal error" });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
