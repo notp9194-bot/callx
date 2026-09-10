@@ -2,6 +2,8 @@ const express = require("express");
 const cors    = require("cors");
 const morgan  = require("morgan");
 const crypto  = require("crypto");
+const fs      = require("fs");
+const path    = require("path");
 const admin   = require("firebase-admin");
 
 // ── FFmpeg binary path (Render / any server pe) ───────────────────────────────
@@ -132,70 +134,11 @@ if (process.env.NODE_ENV !== "test") {
 //   4. Web (already listening) signs in with it, then deletes the node —
 //      it's single-use, so nothing valid is ever left sitting in the DB.
 // ══════════════════════════════════════════════════════════════════════════════
-if (firebaseReady) {
-  const linkedDb = admin.database();
-
-  linkedDb.ref("pairingSessions").on("child_changed", async snap => {
-    try {
-      const session = snap.val();
-      const pairingCode = snap.key;
-      if (!session || session.status !== "approved") return;
-      if (session.customToken) return; // already minted — avoid a duplicate token on re-fires
-      if (!session.uid || !session.deviceId) {
-        console.warn(`[linked-devices] ${pairingCode} approved without uid/deviceId — skipping`);
-        return;
-      }
-
-      const token = await admin.auth().createCustomToken(session.uid, {
-        linkedDevice: true,
-        deviceId: session.deviceId
-      });
-      await linkedDb.ref(`pairingSessions/${pairingCode}/customToken`).set(token);
-      await linkedDb.ref(`pairingSessions/${pairingCode}/tokenIssuedAt`)
-        .set(admin.database.ServerValue.TIMESTAMP);
-      console.log(`[linked-devices] minted companion token uid=${session.uid} device=${session.deviceId}`);
-    } catch (e) {
-      console.error("[linked-devices] token mint failed:", e.message);
-      // Best-effort — deny the session so the web client's own 90s timeout
-      // doesn't leave the user staring at "Linked! Signing in…" forever.
-      try {
-        await linkedDb.ref(`pairingSessions/${snap.key}/status`).set("denied");
-      } catch (_) { /* nothing more we can do */ }
-    }
-  });
-
-  // Housekeeping, same polling style as the delivery-fallback job above:
-  // sweep QR codes that expired unapproved, and approved sessions whose
-  // token the web client never came back to consume/delete (crashed tab,
-  // closed browser mid-handshake, etc).
-  const PAIRING_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // every 5 min
-  setInterval(async () => {
-    try {
-      const snap = await linkedDb.ref("pairingSessions").once("value");
-      if (!snap.exists()) return;
-      const now = Date.now();
-      const updates = {};
-      snap.forEach(child => {
-        const s = child.val();
-        if (!s) return;
-        if (s.status === "pending" && s.expiresAt && s.expiresAt < now) {
-          updates[child.key] = null;
-        } else if (s.status === "approved" && s.tokenIssuedAt && (now - s.tokenIssuedAt) > 120000) {
-          updates[child.key] = null;
-        }
-      });
-      if (Object.keys(updates).length) {
-        await linkedDb.ref("pairingSessions").update(updates);
-        console.log(`[linked-devices] cleaned up ${Object.keys(updates).length} stale pairing session(s)`);
-      }
-    } catch (e) {
-      console.warn("[linked-devices] cleanup job failed:", e.message);
-    }
-  }, PAIRING_CLEANUP_INTERVAL_MS);
-
-  console.log("[OK] Linked Devices pairing listener attached");
-} else {
-  console.warn("[WARN] Linked Devices pairing listener NOT attached — Firebase Admin not ready");
+// DB trigger replacement: pairing approvals are handled by the polling worker
+// installed near the bottom of this file. This deliberately does not attach an
+// RTDB listener, so Render is the only server-side runtime for this feature.
+if (!firebaseReady) {
+  console.warn("[WARN] Linked Devices polling NOT started — Firebase Admin not ready");
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3327,7 +3270,7 @@ const ASSET_LINKS = [
 
 const MAX_ONE_TIME_PREKEYS_STORED = 100; // cap per user, prevents unbounded growth from repeat uploads
 
-/** Verifies the Firebase ID token on Authorization: Bearer <token> and sets req.uid. */
+/** Verifies the Firebase ID token on Authorization: Bearer <token>. */
 async function verifyFirebaseAuth(req, res, next) {
   if (!firebaseReady) return res.status(503).json({ error: "Firebase not configured" });
   const authHeader = req.headers.authorization || "";
@@ -3336,6 +3279,7 @@ async function verifyFirebaseAuth(req, res, next) {
   try {
     const decoded = await admin.auth().verifyIdToken(match[1]);
     req.uid = decoded.uid;
+    req.user = decoded;
     next();
   } catch (e) {
     return res.status(401).json({ error: "Invalid or expired auth token" });
@@ -3511,6 +3455,286 @@ app.get("/search",          (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 // Start server + Render keep-alive
 // ══════════════════════════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FIREBASE FUNCTIONS → RENDER HTTP/POLLING BRIDGE
+// ══════════════════════════════════════════════════════════════════════════════
+// The source of truth remains the existing functions/index.js from the app
+// bundle. It is loaded as plain handler code with lightweight no-op Firebase
+// trigger wrappers; no Cloud Functions deployment is needed. The handlers use
+// the same Admin SDK/database and therefore keep their original business rules.
+//
+// Keep the functions directory beside this server file on Render, or set
+// CALLX_FUNCTIONS_FILE to its absolute path.
+const featureHandlerState = {
+  handlers: null,
+  loadError: null,
+  pollRunning: false,
+  presenceFingerprints: new Map(),
+  reelViewCounts: new Map(),
+  reelBaselineReady: false,
+};
+
+function loadCallxFunctionHandlers() {
+  if (featureHandlerState.handlers) return featureHandlerState.handlers;
+  if (!firebaseReady) throw new Error("Firebase Admin is not configured");
+
+  const candidates = [
+    process.env.CALLX_FUNCTIONS_FILE,
+    path.join(__dirname, "functions", "index.js"),
+    path.join(__dirname, "functions_index.js"),
+  ].filter(Boolean);
+  const sourcePath = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!sourcePath) {
+    throw new Error("functions/index.js not found beside the Render server");
+  }
+
+  const source = fs.readFileSync(sourcePath, "utf8");
+  const start = source.indexOf("initializeApp();");
+  if (start < 0) throw new Error("Could not locate Firebase Functions source");
+
+  class ServerHttpsError extends Error {
+    constructor(code, message, details) {
+      super(message);
+      this.name = "HttpsError";
+      this.code = code;
+      this.details = details;
+    }
+  }
+
+  const triggerFunctions = {
+    https: {
+      HttpsError: ServerHttpsError,
+      onCall: (handler) => handler,
+    },
+    database: {
+      ref: () => ({
+        onCreate: (handler) => handler,
+        onUpdate: (handler) => handler,
+        onWrite: (handler) => handler,
+      }),
+    },
+    pubsub: {
+      schedule: () => ({ onRun: (handler) => handler }),
+    },
+  };
+
+  const factory = new Function(
+    "initializeApp", "getAuth", "getDatabase", "getMessaging",
+    "ServerValue", "functions", "exports", source.slice(start)
+      + "\nreturn exports;"
+  );
+  featureHandlerState.handlers = factory(
+    () => {},
+    () => admin.auth(),
+    () => admin.database(),
+    () => admin.messaging(),
+    admin.database.ServerValue,
+    triggerFunctions,
+    {}
+  );
+  return featureHandlerState.handlers;
+}
+
+function featureHandlers() {
+  try {
+    return loadCallxFunctionHandlers();
+  } catch (error) {
+    featureHandlerState.loadError = error;
+    throw error;
+  }
+}
+
+function featureErrorStatus(code) {
+  return ({
+    "invalid-argument": 400,
+    unauthenticated: 401,
+    "permission-denied": 403,
+    "not-found": 404,
+    "already-exists": 409,
+    "failed-precondition": 412,
+    "resource-exhausted": 429,
+    "deadline-exceeded": 504,
+  })[code] || 500;
+}
+
+async function runFeatureAction(handlerName, req, res) {
+  try {
+    const handlers = featureHandlers();
+    const handler = handlers[handlerName];
+    if (typeof handler !== "function") {
+      return res.status(503).json({ error: `${handlerName} is unavailable` });
+    }
+    const data = req.body && typeof req.body === "object" ? req.body : {};
+    // The callable's context.auth.uid is now supplied from the verified
+    // Render request as req.user.uid. The body can never choose the uid.
+    const context = { auth: { uid: req.user.uid }, rawRequest: req };
+    const result = await handler(data, context);
+    return res.json(result || {});
+  } catch (error) {
+    const code = error && error.code ? String(error.code) : "internal";
+    const message = error && error.message ? error.message : "Internal server error";
+    console.error(`[render-action:${handlerName}]`, code, message);
+    return res.status(featureErrorStatus(code)).json({ error: message, code });
+  }
+}
+
+app.post("/verification/action", verifyFirebaseAuth,
+  (req, res) => runFeatureAction("verificationBadgeAction", req, res));
+app.post("/star-talent/action", verifyFirebaseAuth,
+  (req, res) => runFeatureAction("starTalentAction", req, res));
+app.post("/creator-monetization/action", verifyFirebaseAuth,
+  (req, res) => runFeatureAction("creatorMonetizationAction", req, res));
+app.post("/milestone-earnings/action", verifyFirebaseAuth,
+  (req, res) => runFeatureAction("milestoneEarningsAction", req, res));
+app.post("/admin/action", verifyFirebaseAuth,
+  (req, res) => runFeatureAction("adminAction", req, res));
+
+async function runPairingApprovalPoll() {
+  const db = admin.database();
+  const root = db.ref("pairingSessions");
+  const snap = await root.once("value");
+  if (!snap.exists()) return;
+  const now = Date.now();
+  const updates = {};
+  const mintWork = [];
+  let minted = 0;
+
+  snap.forEach((child) => {
+    const session = child.val() || {};
+    if (session.status === "approved" && !session.customToken) {
+      if (!session.uid || !session.deviceId) {
+        console.warn(`[linked-devices] ${child.key} approved without uid/deviceId`);
+      } else {
+        minted++;
+        mintWork.push((async () => {
+          try {
+            const token = await admin.auth().createCustomToken(session.uid, {
+              linkedDevice: true, deviceId: session.deviceId,
+            });
+            await root.child(child.key).update({
+              customToken: token,
+              tokenIssuedAt: admin.database.ServerValue.TIMESTAMP,
+            });
+          } catch (error) {
+            console.error("[linked-devices] token mint failed:", error.message);
+            try { await root.child(child.key).child("status").set("denied"); } catch (_) {}
+          }
+        })());
+      }
+    }
+    if (session.status === "pending" && session.expiresAt && session.expiresAt < now) {
+      updates[child.key] = null;
+    } else if (session.status === "approved" && session.tokenIssuedAt
+        && now - session.tokenIssuedAt > 120000) {
+      updates[child.key] = null;
+    }
+  });
+  await Promise.all(mintWork);
+  if (Object.keys(updates).length) await root.update(updates);
+  if (minted) console.log(`[linked-devices] queued ${minted} companion token mint(s)`);
+}
+
+async function runMessageSequencePoll() {
+  const handler = featureHandlers().assignMessageSeq;
+  if (typeof handler !== "function") return;
+  const snap = await admin.database().ref("messages").once("value");
+  snap.forEach((chat) => {
+    chat.forEach((message) => {
+      const value = message.val();
+      if (!value || value.seq !== undefined && value.seq !== null) return;
+      Promise.resolve(handler(message, {
+        params: { chatId: chat.key, messageId: message.key },
+      })).catch((error) => console.error("[message-seq] failed:", error.message));
+    });
+  });
+}
+
+async function runPresencePoll() {
+  const handler = featureHandlers().mirrorPresenceOnOnlineChange;
+  if (typeof handler !== "function") return;
+  const snap = await admin.database().ref("users").once("value");
+  const work = [];
+  snap.forEach((userSnap) => {
+    const user = userSnap.val() || {};
+    const groups = user.groups && typeof user.groups === "object" ? user.groups : {};
+    const fingerprint = JSON.stringify({
+      online: user.online === true,
+      lastSeen: user.lastSeen || 0,
+      photoUrl: user.photoUrl || null,
+      groups: Object.keys(groups).sort(),
+    });
+    if (featureHandlerState.presenceFingerprints.get(userSnap.key) === fingerprint) return;
+    featureHandlerState.presenceFingerprints.set(userSnap.key, fingerprint);
+    work.push(Promise.resolve(handler(null, { params: { uid: userSnap.key } })));
+  });
+  await Promise.all(work);
+}
+
+async function runCreatorViewPoll() {
+  const handler = featureHandlers().settleCreatorReelViews;
+  if (typeof handler !== "function") return;
+  const snap = await admin.database().ref("reels").once("value");
+  const changed = [];
+  snap.forEach((reel) => {
+    const value = reel.val() || {};
+    const views = Number(value.viewsCount || 0);
+    const previous = featureHandlerState.reelViewCounts.get(reel.key);
+    featureHandlerState.reelViewCounts.set(reel.key, views);
+    if (featureHandlerState.reelBaselineReady && previous !== undefined && views > previous) {
+      changed.push({ id: reel.key, before: previous, after: views });
+    }
+  });
+  featureHandlerState.reelBaselineReady = true;
+  await Promise.all(changed.map((item) => handler({
+    before: { val: () => item.before },
+    after: { val: () => item.after, exists: () => true },
+  }, { params: { reelId: item.id } })));
+}
+
+async function runScheduledFeature(name) {
+  const handler = featureHandlers()[name];
+  if (typeof handler === "function") await handler();
+}
+
+async function runServerFeaturePoll() {
+  if (!firebaseReady || featureHandlerState.pollRunning) return;
+  featureHandlerState.pollRunning = true;
+  try {
+    await runPairingApprovalPoll();
+    await runMessageSequencePoll();
+    await runPresencePoll();
+    await runCreatorViewPoll();
+  } catch (error) {
+    console.error("[render-feature-poll] failed:", error.message);
+  } finally {
+    featureHandlerState.pollRunning = false;
+  }
+}
+
+function startServerFeatureJobs() {
+  if (!firebaseReady) return;
+  // DB trigger replacements. The intervals are intentionally modest because
+  // every operation is idempotent and RTDB transactions remain authoritative.
+  setInterval(runServerFeaturePoll, 60 * 1000);
+  runServerFeaturePoll().catch((error) =>
+    console.error("[render-feature-poll] initial run failed:", error.message));
+
+  // Exact replacements for the three Cloud Scheduler frequencies.
+  setInterval(() => runScheduledFeature("cleanupExpiredPairingSessions")
+    .catch((e) => console.error("[pairing-cleanup] failed:", e.message)),
+  5 * 60 * 1000);
+  setInterval(() => runScheduledFeature("notifyExpiredCountdownStickers")
+    .catch((e) => console.error("[countdown-sweep] failed:", e.message)),
+  5 * 60 * 1000);
+  setInterval(() => runScheduledFeature("cleanupExpiredStatusReplies")
+    .catch((e) => console.error("[status-replies-cleanup] failed:", e.message)),
+  30 * 60 * 1000);
+  console.log("[OK] Render action routes and polling jobs attached");
+}
+
+startServerFeatureJobs();
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("callx-server v3 on :" + PORT);
