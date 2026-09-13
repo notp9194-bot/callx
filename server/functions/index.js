@@ -1221,7 +1221,16 @@ async function resolveSearchToUid(rawQuery) {
     } catch (e) { /* no match */ }
   }
 
-  // 4) CallX ID — exact match, same field the in-app SearchActivity uses.
+  // 4) @username — direct O(1) lookup on the usernames/{username} reservation
+  //    node (same node ProfileSetupActivity writes to). Accepts a leading
+  //    '@' since that's how moderators will naturally type a handle.
+  const asUsername = (query.startsWith("@") ? query.slice(1) : query).toLowerCase();
+  if (/^[a-z0-9_]{3,30}$/.test(asUsername)) {
+    const byUsername = await db.ref("usernames").child(asUsername).once("value");
+    if (byUsername.exists()) return byUsername.val();
+  }
+
+  // 5) CallX ID — exact match, same field the in-app SearchActivity uses.
   const byCallxId = await db.ref("users").orderByChild("callxId")
     .equalTo(query).limitToFirst(1).once("value");
   if (byCallxId.exists()) {
@@ -1288,6 +1297,21 @@ exports.adminAction = functions.https.onCall(async (data, context) => {
     return { user: await authProfile(resolvedUid) };
   }
 
+  if (action === "getUsernameHistory") {
+    const uid = payload.uid;
+    if (!uid || typeof uid !== "string") {
+      throw new functions.https.HttpsError("invalid-argument", "uid is required.");
+    }
+    const snap = await db.ref(`reelUsernameHistory/${uid}`).once("value");
+    const items = [];
+    snap.forEach((child) => {
+      const value = asObject(child.val());
+      items.push({ username: value.username || child.key, changedAt: value.changedAt || null });
+    });
+    items.sort((a, b) => Number(b.changedAt || 0) - Number(a.changedAt || 0));
+    return { items };
+  }
+
   if (action === "setUserStatus") {
     const uid = payload.uid;
     const status = payload.status;
@@ -1319,7 +1343,20 @@ exports.adminAction = functions.https.onCall(async (data, context) => {
     if (!payload.uid || payload.uid === context.auth.uid) {
       throw new functions.https.HttpsError("invalid-argument", "A different uid is required.");
     }
+    // Read the handle before removing the profile so it can be released —
+    // otherwise usernames/{username} stays pointed at a uid that no longer
+    // exists and nobody can ever claim that handle again (client-side
+    // self-delete in AccountMenuActivity already does this; admin-initiated
+    // delete did not).
+    const profileSnap = await db.ref(`users/${payload.uid}`).once("value");
+    const username = asObject(profileSnap.val()).username;
     await db.ref(`users/${payload.uid}`).remove();
+    if (username) {
+      const reservation = await db.ref(`usernames/${username}`).once("value");
+      if (reservation.val() === payload.uid) {
+        await db.ref(`usernames/${username}`).remove();
+      }
+    }
     try { await getAuth().deleteUser(payload.uid); } catch (e) {
       if (e.code !== "auth/user-not-found") throw e;
     }
