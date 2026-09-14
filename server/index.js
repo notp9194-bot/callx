@@ -872,6 +872,31 @@ app.post("/translate", (req, res) => {
     const MIN_HASHES_REQUIRED = parseInt(process.env.AUDIO_MIN_HASHES, 10)        || 30;
     const DELTA_BIN_HOPS      = parseInt(process.env.AUDIO_DELTA_BIN_HOPS, 10)    || 2;
 
+    // ✅ FIX (race condition): two users uploading byte-identical (or near-
+    // identical) audio at nearly the same instant could both run
+    // findBestMatch() before EITHER's index write has landed, see no match,
+    // and both mint their own "new original" sound_id for what should have
+    // been a single shared sound. A short-lived claim lock — keyed off a
+    // value deterministically derived from the upload's OWN hash set, so
+    // two computations of the same audio always produce the same key —
+    // makes only one of them proceed to register; the other waits briefly
+    // and re-checks the index, which by then usually has the winner's entry.
+    const CLAIM_TTL_MS  = parseInt(process.env.AUDIO_CLAIM_TTL_MS, 10)  || 20 * 1000;
+    const CLAIM_WAIT_MS = parseInt(process.env.AUDIO_CLAIM_WAIT_MS, 10) || 3000;
+
+    function pickClaimHash(hashes) {
+      // Smallest hash key wins, purely for determinism — genuinely-the-same
+      // audio always yields the same SET of landmark hashes (hash ORDER can
+      // wobble slightly with incidental FFT/windowing timing noise, but the
+      // set itself and therefore its minimum member is stable), so two
+      // concurrent uploads of the same audio always compute the same
+      // claimHash and therefore contend for the same lock key.
+      if (!hashes || !hashes.length) return "none";
+      let min = hashes[0].h;
+      for (const { h } of hashes) if (h < min) min = h;
+      return min;
+    }
+
     // ── v3: speed-change / pitch-shift fallback (see big comment above) ────
     //   AUDIO_SPEED_INVARIANT_ENABLED — kill switch, no redeploy needed
     //   AUDIO_SPEED_HYPOTHESES        — ordered candidate speed factors,
@@ -1001,6 +1026,44 @@ app.post("/translate", (req, res) => {
 
       console.log("[audio-match] no match in audio_hash_index (below threshold, speeds tried)");
 
+      // ✅ FIX (race condition) — see pickClaimHash/CLAIM_TTL_MS comment above.
+      const claimHash = pickClaimHash(hashes);
+      const lockRef = db.ref(`audio_fingerprint_locks/${claimHash}`);
+      let wonClaim = true;
+      try {
+        const claim = await lockRef.transaction(cur => {
+          if (cur && (Date.now() - cur.claimedAt) < CLAIM_TTL_MS) return; // held by someone else — abort
+          return { claimedAt: Date.now() };
+        });
+        wonClaim = !!claim.committed;
+      } catch (e) {
+        console.warn("[audio-match] claim-lock transaction failed (non-fatal):", e.message);
+      }
+
+      if (!wonClaim) {
+        console.log(`[audio-match] lost claim race for hash=${claimHash} — waiting ${CLAIM_WAIT_MS}ms then re-checking index`);
+        await new Promise(r => setTimeout(r, CLAIM_WAIT_MS));
+        const retryMatch = await findBestMatch({
+          hashes, pcmBuffer, indexRoot: "audio_hash_index",
+          matchThreshold: MATCH_THRESHOLD, matchMinVotes: MATCH_MIN_VOTES,
+          querySample: MATCH_QUERY_SAMPLE, speedQuerySample: SPEED_MATCH_QUERY_SAMPLE,
+          speedMinVotes: SPEED_MATCH_MIN_VOTES
+        });
+        if (retryMatch) {
+          const metaSnap = await db.ref(`audio_fingerprints/${retryMatch.id}`).once("value");
+          const meta = metaSnap.val() || {};
+          console.log(`[audio-match] MATCHED on retry sound=${retryMatch.id} (race resolved, avoided duplicate original)`);
+          return {
+            matched: true, sound_id: retryMatch.id, owner_uid: meta.ownerUid || "",
+            offset_sec: retryMatch.offsetSec, speed_factor: retryMatch.speedFactor
+          };
+        }
+        // Still nothing — rare double-miss (the other job's audio may have
+        // genuinely been different, or its write also failed). Fall through
+        // and create as normal rather than blocking this upload indefinitely.
+        console.log("[audio-match] retry still found nothing — proceeding to create (rare double-miss)");
+      }
+
       // No match — this becomes the new original. Use the ID the app already
       // intends to create in Firebase's sounds/ tree, so the two stay in sync.
       // Always registered from the UNMODIFIED (1.0x) hashes — never from a
@@ -1020,6 +1083,10 @@ app.post("/translate", (req, res) => {
       const updates = {};
       for (const { h, t } of capped) updates[`audio_hash_index/${h}/${soundId}`] = t;
       if (Object.keys(updates).length) await db.ref().update(updates);
+
+      // Release the claim now that our write has landed — don't rely on the
+      // TTL for the common (non-racing) case.
+      try { await lockRef.remove(); } catch (_) {}
 
       return { matched: false, sound_id: soundId, owner_uid: ownerUid || "", offset_sec: 0, speed_factor: 1.0 };
     }
@@ -1213,7 +1280,14 @@ app.post("/translate", (req, res) => {
       while (fpActive < FP_QUEUE_CONCURRENCY && fpQueue.length > 0) {
         const job = fpQueue.shift();
         fpActive++;
-        runFingerprintJob(job).finally(() => {
+        // ✅ FIX (gap #1 — existing/trending sound never fingerprinted): the
+        // queue now carries two job shapes — job.type === "index_existing"
+        // (see runIndexExistingSoundJob below) reuses the SAME bounded
+        // worker pool/concurrency limit as the normal match jobs, so a
+        // flood of "link an existing sound" calls can't starve real
+        // /audio/match uploads of CPU.
+        const runner = job.type === "index_existing" ? runIndexExistingSoundJob(job) : runFingerprintJob(job);
+        runner.finally(() => {
           fpActive--;
           pumpFingerprintQueue();
         });
@@ -1447,8 +1521,106 @@ app.post("/translate", (req, res) => {
       }
     }
 
-    // Housekeeping: sweep job status nodes older than FP_JOB_TTL_MS so
-    // audio_match_jobs/ doesn't grow forever (mirrors the pairing-session
+    // ✅ FIX (gap #1 — existing/trending sound never fingerprinted):
+    // downloads a URL to a local temp file. Small/best-effort — sound audio
+    // files are always small (seconds to a couple minutes), same size class
+    // as the audio /audio/match already handles. Follows up to 3 redirects
+    // (Cloudinary URLs don't normally redirect, but this is cheap insurance).
+    function downloadUrlToFile(url, destPath, redirectsLeft = 3) {
+      const https = require("https");
+      const http  = require("http");
+      return new Promise((resolve, reject) => {
+        const client = url.startsWith("https:") ? https : http;
+        const file = fs.createWriteStream(destPath);
+        client.get(url, (res) => {
+          if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirectsLeft > 0) {
+            file.close();
+            fs.unlink(destPath, () => {});
+            return resolve(downloadUrlToFile(res.headers.location, destPath, redirectsLeft - 1));
+          }
+          if (res.statusCode !== 200) {
+            file.close();
+            fs.unlink(destPath, () => {});
+            return reject(new Error(`download failed: HTTP ${res.statusCode}`));
+          }
+          res.pipe(file);
+          file.on("finish", () => file.close(() => resolve()));
+        }).on("error", (e) => {
+          file.close();
+          fs.unlink(destPath, () => {});
+          reject(e);
+        });
+      });
+    }
+
+    // ✅ FIX (gap #1 — existing/trending sound never fingerprinted):
+    // registers an ALREADY-KNOWN sound_id's own audioUrl into the same
+    // fingerprint index /audio/match uses — WITHOUT running the match/
+    // create-new logic, since the sound_id is already decided (it's an
+    // existing sounds/{soundId} the client picked, not a fresh upload).
+    // Idempotent: does nothing if this soundId is already indexed, so
+    // repeated calls (e.g. many reels reusing the same trending sound) cost
+    // one cheap existence check each after the first.
+    async function runIndexExistingSoundJob({ jobId, audioUrl, soundId, ownerUid, reelId }) {
+      const db = admin.database();
+      const jobRef = db.ref(`audio_match_jobs/${jobId}`);
+      const tmpPath = path.join(os.tmpdir(), `idx_${jobId}.audio`);
+      try {
+        await jobRef.update({ status: "processing" });
+
+        const existingSnap = await db.ref(`audio_fingerprints/${soundId}`).once("value");
+        if (existingSnap.exists()) {
+          console.log(`[audio-index-existing] sound=${soundId} already indexed — skipping`);
+          await jobRef.update({
+            status: "done", indexed: false, already_indexed: true,
+            sound_id: soundId, completedAt: admin.database.ServerValue.TIMESTAMP
+          });
+          return;
+        }
+
+        await downloadUrlToFile(audioUrl, tmpPath);
+        const pcm = await extractPcmMono11025(tmpPath);
+        const hashes = computeFingerprintHashes(pcm);
+
+        if (hashes.length < MIN_HASHES_REQUIRED) {
+          console.warn(`[audio-index-existing] sound=${soundId} too short/quiet to index (${hashes.length} hashes)`);
+          await jobRef.update({
+            status: "done", indexed: false, sound_id: soundId,
+            completedAt: admin.database.ServerValue.TIMESTAMP
+          });
+          return;
+        }
+
+        await db.ref(`audio_fingerprints/${soundId}`).set({
+          ownerUid:  ownerUid || null,
+          reelId:    reelId || null,
+          createdAt: admin.database.ServerValue.TIMESTAMP,
+          hashCount: hashes.length,
+          backfilled: true // distinguishes "indexed after the fact" from a raw-upload original, for debugging/analytics only
+        });
+
+        const capped = hashes.slice(0, INDEX_HASH_CAP);
+        const updates = {};
+        for (const { h, t } of capped) updates[`audio_hash_index/${h}/${soundId}`] = t;
+        if (Object.keys(updates).length) await db.ref().update(updates);
+
+        console.log(`[audio-index-existing] indexed sound=${soundId} (${hashes.length} hashes) from ${audioUrl}`);
+        await jobRef.update({
+          status: "done", indexed: true, sound_id: soundId,
+          completedAt: admin.database.ServerValue.TIMESTAMP
+        });
+      } catch (err) {
+        console.error(`[audio-index-existing] job ${jobId} (sound=${soundId}) failed:`, err.message);
+        try {
+          await jobRef.update({
+            status: "error", error: err.message,
+            completedAt: admin.database.ServerValue.TIMESTAMP
+          });
+        } catch (_) { /* best effort */ }
+      } finally {
+        try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
+      }
+    }
     // and delivery-fallback cleanup jobs elsewhere in this file).
     if (firebaseReady) {
       setInterval(async () => {
@@ -1551,7 +1723,53 @@ app.post("/translate", (req, res) => {
       }
     });
 
-    // GET /audio/trending?days=7&limit=20 — "trending sounds" feed, ranked
+    // POST /audio/index-existing — body: { sound_id, audio_url, uid, reel_id }
+    // ✅ FIX (gap #1 — existing/trending sound never fingerprinted): called
+    // by the client (see VideoUploader.indexExistingSoundIfNeeded /
+    // registerOrLinkSound) whenever a reel links to an ALREADY-EXISTING
+    // sound instead of raw-uploading its own audio. Idempotent — returns
+    // immediately if this sound_id is already in the fingerprint index, so
+    // repeat calls (many reels reusing one trending sound) are cheap after
+    // the first. Fire-and-forget from the client's point of view; the
+    // reel post itself never waits on this.
+    app.post("/audio/index-existing", async (req, res) => {
+      if (!firebaseReady) return res.status(503).json({ error: "Firebase not configured" });
+      const { sound_id = "", audio_url = "", uid = "", reel_id = "" } = req.body || {};
+      if (!sound_id.trim() || !audio_url.trim()) {
+        return res.status(400).json({ error: "sound_id and audio_url are required" });
+      }
+
+      try {
+        const db = admin.database();
+
+        // Cheap short-circuit BEFORE queueing/downloading anything — avoids
+        // even a HEAD-weight cost on the common "already indexed" case.
+        const existingSnap = await db.ref(`audio_fingerprints/${sound_id}`).once("value");
+        if (existingSnap.exists()) {
+          return res.status(200).json({ already_indexed: true, sound_id });
+        }
+
+        const jobRef = db.ref("audio_match_jobs").push();
+        const jobId  = jobRef.key;
+        await jobRef.set({
+          status: "queued", type: "index_existing",
+          soundId: sound_id, uid, reelId: reel_id,
+          createdAt: admin.database.ServerValue.TIMESTAMP
+        });
+
+        enqueueFingerprintJob({
+          type: "index_existing", jobId,
+          audioUrl: audio_url, soundId: sound_id, ownerUid: uid, reelId: reel_id
+        });
+
+        res.status(202).json({ job_id: jobId, status: "queued" });
+      } catch (err) {
+        console.error("[/audio/index-existing] enqueue failed:", err.message);
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+
     // by usage-event count (see recordAudioMatchStat) over the requested
     // trailing window. Response: { window_days, sounds: [ { sound_id,
     // owner_uid, reel_id, window_count, total_count, hash_count,
