@@ -1250,7 +1250,132 @@ app.post("/translate", (req, res) => {
       }
     });
 
+    // ════════════════════════════════════════════════════════════════════
+    // v7 (plan item #3): RETROACTIVE BULK COPYRIGHT TAKEDOWN
+    //
+    // WHY THIS EXISTS: /admin/licensed-catalog/add only affects uploads
+    // that happen AFTER a track is registered — matchLicensedCatalog() runs
+    // per-upload, at fingerprint time. Anything already posted before that
+    // track existed in the catalog never got checked against it and just
+    // sits there unmuted/unflagged forever, even once the rights holder's
+    // track is loaded in. This endpoint is the "go back and apply the
+    // verdict retroactively" step: given a sound_id (an EXISTING user-sound
+    // entity that a human/automated review has confirmed matches a
+    // track_id already in licensed_catalog_meta), it walks every reel
+    // linked to that sound and applies the SAME copyrightMatch/audioMuted/
+    // removal logic that a live upload-time match would have applied
+    // (see ReelUploadActivity#registerOrLinkSound's copyrightMatch handling
+    // — this mirrors it exactly, just server-side and batched).
+    //
+    // POST /admin/copyright-takedown  (x-admin-key header)
+    //   body: { sound_id, track_id }
+    //     sound_id  — sounds/{id} entity whose reels should be re-evaluated
+    //     track_id  — licensed_catalog_meta/{id} track it was matched to
+    //                 (supplies title/artist/rights_holder/policy)
+    //
+    // Policy behaviour (identical mapping to the client's upload-time logic):
+    //   "block"        → reel removed entirely (reels/{id} AND
+    //                     reelsByUser/{ownerUid}/{id})
+    //   "mute"         → reel stays up, reels/{id}/audioMuted = true
+    //   "allow_credit" → reel stays up, just gets the credit banner data
+    // In every case, reels/{id}/copyrightMatch is (re)written so the
+    // client's existing rendering logic (ReelUiController/ReelPlayerFragment)
+    // picks it up identically to a live match — and each affected owner
+    // gets an in-app moderation notification explaining what happened.
+    //
+    // Single multi-path admin.database().ref().update() — RTDB supports
+    // mixing writes and deletes (null) across arbitrary paths in one atomic
+    // batch, so this is safe even across thousands of reels/owners.
+    // ════════════════════════════════════════════════════════════════════
+    app.post("/admin/copyright-takedown", async (req, res) => {
+      if (!requireAdminKey(req, res)) return;
+      if (!firebaseReady) return res.status(503).json({ error: "Firebase not configured" });
 
+      const { sound_id, track_id } = req.body || {};
+      if (!sound_id) return res.status(400).json({ error: "sound_id required" });
+      if (!track_id) return res.status(400).json({ error: "track_id required" });
+
+      try {
+        const db = admin.database();
+
+        const trackSnap = await db.ref(`licensed_catalog_meta/${track_id}`).once("value");
+        if (!trackSnap.exists()) return res.status(404).json({ error: "track_id not found in licensed_catalog_meta" });
+        const track = trackSnap.val() || {};
+        const policy = VALID_LICENSE_POLICIES.has(track.policy) ? track.policy : "mute";
+
+        const reelsSnap = await db.ref(`sounds/${sound_id}/reels`).once("value");
+        if (!reelsSnap.exists()) {
+          return res.json({ sound_id, track_id, policy, reels_affected: 0, note: "no reels linked to this sound" });
+        }
+
+        // Same shape matchLicensedCatalog() returns on a live match, minus
+        // offset/speed (unknowable retroactively without re-running FFT per
+        // reel — not needed for the mute/block/credit decision itself).
+        const copyrightMatch = {
+          matched: true,
+          track_id,
+          title: track.title || "",
+          artist: track.artist || "",
+          rights_holder: track.rightsHolder || "",
+          policy,
+          offset_sec: 0,
+          speed_factor: 1.0,
+          takedown_at: admin.database.ServerValue.TIMESTAMP
+        };
+        const copyrightMatchStr = JSON.stringify(copyrightMatch);
+
+        const updates = {};
+        const notifs = [];
+        let affected = 0;
+
+        reelsSnap.forEach((child) => {
+          const reelId   = child.key;
+          const ownerUid = (child.val() || {}).ownerUid || "";
+          affected++;
+
+          if (policy === "block") {
+            updates[`reels/${reelId}`] = null;
+            if (ownerUid) updates[`reelsByUser/${ownerUid}/${reelId}`] = null;
+          } else {
+            updates[`reels/${reelId}/copyrightMatch`] = copyrightMatchStr;
+            if (policy === "mute") {
+              updates[`reels/${reelId}/audioMuted`] = true;
+            }
+          }
+
+          if (ownerUid) {
+            const message = policy === "block"
+              ? `Your reel was removed — it used licensed audio ("${track.title || "a track"}") without a license.`
+              : policy === "mute"
+                ? `Licensed audio detected in your reel ("${track.title || "a track"}") — its sound was muted.`
+                : `Your reel's audio matched a licensed track ("${track.title || "a track"}") and is now credited.`;
+            notifs.push({ ownerUid, reelId, message });
+          }
+        });
+
+        if (Object.keys(updates).length) await db.ref().update(updates);
+
+        // In-app moderation notifications — best-effort, one push() per
+        // affected owner. Not batched into the update() above since each
+        // needs its own generated push key.
+        await Promise.all(notifs.map(({ ownerUid, reelId, message }) =>
+          db.ref("reel_notifications").child(ownerUid).push({
+            type: "copyright_takedown",
+            senderUid: "system",
+            reel_id: reelId,
+            message,
+            timestamp: admin.database.ServerValue.TIMESTAMP,
+            read: false
+          }).catch((e) => console.warn("[copyright-takedown] notif write failed (non-fatal):", e.message))
+        ));
+
+        console.log(`[/admin/copyright-takedown] sound=${sound_id} track=${track_id} policy=${policy} reels_affected=${affected}`);
+        res.json({ sound_id, track_id, policy, reels_affected: affected });
+      } catch (err) {
+        console.error("[/admin/copyright-takedown] failed:", err.message);
+        res.status(500).json({ error: err.message });
+      }
+    });
 
     // ── ASYNC QUEUE ──────────────────────────────────────────────────────
     // WHY: FFT + PCM extraction is CPU-bound and, on Render's free/shared
@@ -2450,7 +2575,12 @@ const VALID_REEL_TYPES = new Set([
   // Collab Repost cross-device push
   "collab_repost_invite",
   "collab_repost_accepted",
-  "collab_repost_declined"
+  "collab_repost_declined",
+  // ✅ NEW (plan item #2 — per-use sound notification): sent to a sound's
+  // owner whenever someone else's reel gets linked to it (explicit "Use
+  // this sound" pick or an automatic fingerprint match). Client:
+  // PushNotify.notifyReelSoundUsed() → ReelFCMNotificationHandler.TYPE_SOUND_USED
+  "sound_used"
 ]);
 
 app.post("/notify/reel", async (req, res) => {
@@ -2463,11 +2593,15 @@ app.post("/notify/reel", async (req, res) => {
     sessionId,      // multi_duet_invite ke liye extra field
     collabRepostId, // Collab Repost: invite/accepted/declined ke liye (CollabRepostNotificationHelper isi key se padhta h)
     newReelId,      // Collab Repost: accepted ke baad ka naya reel id
-    collabId        // NEW — "Add Collaborators" (joint-post) feature: collabPostInvites/
+    collabId,       // NEW — "Add Collaborators" (joint-post) feature: collabPostInvites/
                      // ki push key. ReelFCMNotificationHandler ise "collab_id" data-key se
                      // padhta hai (TYPE_COLLAB_REQUEST / TYPE_COLLAB_ACCEPTED / TYPE_COLLAB_DECLINED)
                      // — pehle ye field yahan accept hi nahi hoti thi isliye collab_id hamesha
                      // khali jaata tha aur notification tap karne par sahi invite open nahi hota tha.
+    soundTitle,     // ✅ NEW (plan item #2) — "sound_used" ke liye: kis sound ka naam
+                     // notification body me dikhana hai (PushNotify.notifyReelSoundUsed)
+    soundId         // ✅ NEW (plan item #2) — "sound_used" ke liye: deep-link/analytics
+                     // ke liye sound ka id (ReelFCMNotificationHandler "sound_id" se padhta hai)
   } = req.body || {};
 
   if (!toUid)  return res.status(400).json({ error: "toUid required" });
@@ -2524,7 +2658,12 @@ app.post("/notify/reel", async (req, res) => {
         newReelId:       String(newReelId      || ""),
         // NEW — "Add Collaborators" (joint-post) feature. Key "collab_id" rakhi h kyunki
         // ReelFCMNotificationHandler exactly isi string se padhta h (get(data, "collab_id")).
-        collab_id:       String(collabId || "")
+        collab_id:       String(collabId || ""),
+        // ✅ NEW (plan item #2) — "sound_used" push ke liye. Keys wahi rakhi h jo
+        // ReelFCMNotificationHandler already "sound_title"/"sound_id" se padhta h
+        // (TYPE_SOUND_TRENDING handling me bhi yahi keys use hoti h).
+        sound_title:     String(soundTitle || ""),
+        sound_id:        String(soundId    || "")
       },
       android: { priority: "high", ttl: 86400000 }
     });
