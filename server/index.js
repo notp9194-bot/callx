@@ -1377,6 +1377,86 @@ app.post("/translate", (req, res) => {
       }
     });
 
+    // ── Admin: rebuild sound usage counters (one-time backfill + repair) ───
+    // Companion to the Cloud Function trigger `onSoundReelOwnerWrite`
+    // (functions/index.js), which now owns sounds/{id}/reel_count,
+    // sounds/{id}/user_count and sounds/{id}/is_trending going forward.
+    // Sounds that already existed before that trigger was deployed have no
+    // user_count and no soundUsers index, so this walks sounds/ once and
+    // rebuilds, per sound, from the REAL sounds/{id}/reels entries:
+    //   soundUsers/{id}/{ownerUid}/{reelId} = true   (replaced, not merged —
+    //                                                  so stale leftovers vanish)
+    //   sounds/{id}/user_count                         (# distinct owners)
+    //   sounds/{id}/reel_count                         (# owned reel entries,
+    //                                                   ONLY with fix_reel_count=1
+    //                                                   — the old client-side
+    //                                                   counter may include
+    //                                                   legacy entries with no
+    //                                                   ownerUid, so overwriting
+    //                                                   it is opt-in)
+    //
+    // POST /admin/backfill-sound-counts  (x-admin-key header)
+    //   body/query: { limit?: 1..100 (default 25), after?: <last key from the
+    //                 previous response>, fix_reel_count?: 1 }
+    // Paginated so no single call reads all of sounds/ at once; call again
+    // with `after` = the returned `next` until `done` is true:
+    //   {"processed":25,"next":"<lastSoundId>","done":false}
+    // Safe to re-run any number of times (pure rebuild from source data).
+    // Run it BEFORE shipping the app version that reads user_count, ideally
+    // when uploads are quiet: a reel added between a sound's read and its
+    // write here would be picked up by the trigger, but this rebuild is
+    // absolute, so a re-run is the cheap way to be sure.
+    app.post("/admin/backfill-sound-counts", async (req, res) => {
+      if (!requireAdminKey(req, res)) return;
+      if (!firebaseReady) return res.status(503).json({ error: "Firebase not configured" });
+
+      const body = req.body || {};
+      const limit = Math.min(100, Math.max(1, parseInt(body.limit ?? req.query.limit, 10) || 25));
+      const after = String(body.after ?? req.query.after ?? "");
+      const fixReelCount = ["1", "true", "yes"].includes(String(body.fix_reel_count ?? req.query.fix_reel_count ?? "").toLowerCase());
+      const safeKey = (v) => typeof v === "string" && v.length > 0 && v.length <= 128 && !/[.#$\[\]\/]/.test(v);
+
+      try {
+        const db = admin.database();
+        let q = db.ref("sounds").orderByKey();
+        if (after) q = q.startAt(after);
+        // startAt(after) is inclusive → fetch one extra and skip it.
+        const snap = await q.limitToFirst(limit + (after ? 1 : 0)).once("value");
+
+        const updates = {};
+        let processed = 0;
+        let lastKey = null;
+        snap.forEach((soundSnap) => {
+          if (after && soundSnap.key === after) return; // already handled last page
+          lastKey = soundSnap.key;
+          processed++;
+
+          const owners = {};            // ownerUid -> { reelId: true }
+          let reelCount = 0;
+          soundSnap.child("reels").forEach((reelSnap) => {
+            const owner = reelSnap.child("ownerUid").val();
+            if (!safeKey(owner)) return;
+            (owners[owner] = owners[owner] || {})[reelSnap.key] = true;
+            reelCount++;
+          });
+          const userCount = Object.keys(owners).length;
+
+          updates[`soundUsers/${soundSnap.key}`] = userCount > 0 ? owners : null;
+          updates[`sounds/${soundSnap.key}/user_count`] = userCount;
+          if (fixReelCount) updates[`sounds/${soundSnap.key}/reel_count`] = reelCount;
+        });
+
+        if (processed > 0) await db.ref().update(updates);
+
+        const done = processed < limit;   // short page → nothing left after it
+        console.log(`[/admin/backfill-sound-counts] processed=${processed} next=${lastKey} done=${done} fixReelCount=${fixReelCount}`);
+        res.json({ processed, next: done ? null : lastKey, done, fix_reel_count: fixReelCount });
+      } catch (err) {
+        console.error("[/admin/backfill-sound-counts] failed:", err.message);
+        res.status(500).json({ error: err.message });
+      }
+    });
+
     // ── ASYNC QUEUE ──────────────────────────────────────────────────────
     // WHY: FFT + PCM extraction is CPU-bound and, on Render's free/shared
     // CPU, can take several seconds per clip — doing this synchronously
