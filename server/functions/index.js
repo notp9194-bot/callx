@@ -2059,6 +2059,73 @@ async function removeSoundReelUsage(db, soundId, reelId, ownerUid) {
   if (nowEmpty) await bumpSoundCounter(db, soundId, "user_count", -1);
 }
 
+// ── Audio fingerprint cleanup on sound delete ──────────────────────────────
+// sounds/{soundId} is deleted (sound removed / its only reel deleted) → drop
+// its audio_fingerprints/{soundId} record so a later raw upload of the same
+// audio can't be matched to a sound that no longer exists. Stale audio_hash_index
+// entries are purged lazily by the match server (findLiveMatch).
+// ── Reel deleted → clean up its sound links + orphan fingerprint ────────────
+// Covers EVERY delete path (reel menu, edit screen, profile bulk delete, admin)
+// without each client having to remember to call the match server.
+//   - removes sounds/{musicId}/reels/{reelId} (counters follow via
+//     onSoundReelOwnerWrite) and sounds/orig_{reelId}/reels/{reelId}
+//   - if the reel's OWN sound (orig_{reelId}) now has no reels and nobody saved
+//     it, the sound + its audio_fingerprints record are removed too
+exports.onReelDeletedAudioCleanup = functions.database
+  .ref("/reels/{reelId}")
+  .onDelete(async (snap, context) => {
+    const { reelId } = context.params;
+    const reel = snap.val();
+    if (!reel || typeof reel !== "object") return null;
+    if (!reel.uid && !reel.videoUrl && !reel.musicId) return null; // e.g. reels/handles
+    const db = getDatabase();
+    const ownSoundId = `orig_${reelId}`;
+    try {
+      const ids = new Set([ownSoundId]);
+      if (reel.musicId) ids.add(reel.musicId);
+      const updates = {};
+      for (const sid of ids) updates[`sounds/${sid}/reels/${reelId}`] = null;
+      // Don't resurrect a missing sound node with a partial write: only remove
+      // entries that actually exist.
+      const existing = {};
+      for (const sid of ids) {
+        const e = await db.ref(`sounds/${sid}/reels/${reelId}`).once("value");
+        if (e.exists()) existing[`sounds/${sid}/reels/${reelId}`] = null;
+      }
+      if (Object.keys(existing).length) await db.ref().update(existing);
+
+      const own = await db.ref(`sounds/${ownSoundId}`).once("value");
+      if (own.exists()) {
+        const v = own.val() || {};
+        const remaining = v.reels ? Object.keys(v.reels).length : 0;
+        const saves = Number(v.total_saves || 0);
+        if (remaining === 0 && saves === 0 && (!v.sourceReelId || v.sourceReelId === reelId)) {
+          await db.ref().update({
+            [`sounds/${ownSoundId}`]: null,
+            [`audio_fingerprints/${ownSoundId}`]: null
+          });
+        }
+      } else {
+        await db.ref(`audio_fingerprints/${ownSoundId}`).remove();
+      }
+    } catch (err) {
+      console.error(`[onReelDeletedAudioCleanup] ${reelId} failed:`, err);
+    }
+    return null;
+  });
+
+exports.onSoundAudioDeleted = functions.database
+  .ref("/sounds/{soundId}/audioUrl")
+  .onDelete(async (snap, context) => {
+    const { soundId } = context.params;
+    try {
+      await getDatabase().ref(`audio_fingerprints/${soundId}`).remove();
+    } catch (err) {
+      console.error(`[audioFingerprintCleanup] ${soundId} failed:`, err);
+    }
+    return null;
+  });
+
 exports.onSoundReelOwnerWrite = functions.database
   .ref("/sounds/{soundId}/reels/{reelId}/ownerUid")
   .onWrite(async (change, context) => {
