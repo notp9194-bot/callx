@@ -411,10 +411,11 @@ exports.notifyExpiredCountdownStickers = functions.pubsub
  *     statusId), so leaving replies in place here is what makes highlighted
  *     comments keep showing up — no separate copy step needed.
  *
- * Only the `replies` child is removed, never the status doc itself — the
- * client's own expiresAt filtering already hides expired stories from the
- * feed, so this only needs to clean up the one thing that doesn't
- * self-hide (the public comment overlay data).
+ * UPDATED: the whole expired status record is now removed (replies included),
+ * not just `replies`. Expiry = expiresAt, else timestamp + 24h (matches the app's
+ * StatusItem.effectiveExpiry and the Firebase rules). Highlighted stories are kept.
+ * NOTE: media files (Cloudinary) are NOT deleted here — assets are shared via
+ * content-hash dedup / reshares, so URL-based deletion is unsafe.
  */
 exports.cleanupExpiredStatusReplies = functions.pubsub
   .schedule("every 30 minutes")
@@ -423,28 +424,35 @@ exports.cleanupExpiredStatusReplies = functions.pubsub
     const statusRootSnap = await db.ref("status").once("value");
     if (!statusRootSnap.exists()) return null;
 
+    // WhatsApp-style: ONE expiry rule everywhere = expiresAt, else timestamp + 24h.
+    // A status with neither is treated as expired (never "lives forever").
+    // 1h grace so a client still showing the last seconds of a story never races the delete.
+    const DAY = 24 * 60 * 60 * 1000;
+    const GRACE = 60 * 60 * 1000;
     const now = Date.now();
-    const pendingDeletes = [];
-    let deletedCount = 0;
+    const paths = [];
 
     statusRootSnap.forEach((ownerSnap) => {
       ownerSnap.forEach((statusSnap) => {
-        const expiresAt = statusSnap.child("expiresAt").val();
-        if (!expiresAt || expiresAt >= now) return; // not expired yet / no expiry set
+        const v = statusSnap.val() || {};
+        if (v.scheduledAt && v.scheduledAt > now) return; // scheduled, not yet live
+        if (v.isHighlighted === true) return;             // highlights are permanent (replies kept too)
 
-        const isHighlighted = statusSnap.child("isHighlighted").val() === true;
-        if (isHighlighted) return; // Instagram-style: keep comments for highlighted stories
+        let exp = Number(v.expiresAt) > 0 ? Number(v.expiresAt) : 0;
+        if (!exp) exp = Number(v.timestamp) > 0 ? Number(v.timestamp) + DAY : 0;
+        if (exp + GRACE >= now) return;                   // still live / inside grace
 
-        const repliesRef = statusSnap.child("replies").ref;
-        if (!statusSnap.child("replies").exists()) return;
-
-        pendingDeletes.push(repliesRef.remove().then(() => { deletedCount++; }));
+        paths.push(`status/${ownerSnap.key}/${statusSnap.key}`); // whole record incl. replies
       });
     });
 
-    await Promise.all(pendingDeletes);
-    if (deletedCount > 0) {
-      console.log(`Expired-story comment sweep: cleared replies on ${deletedCount} expired, non-highlighted status(es).`);
+    for (let i = 0; i < paths.length; i += 400) {
+      const chunk = {};
+      paths.slice(i, i + 400).forEach((p) => { chunk[p] = null; });
+      await db.ref().update(chunk);
+    }
+    if (paths.length > 0) {
+      console.log(`Expired-status sweep: removed ${paths.length} expired, non-highlighted status record(s).`);
     }
     return null;
   });
