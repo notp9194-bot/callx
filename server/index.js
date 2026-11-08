@@ -4548,6 +4548,9 @@ function loadCallxFunctionHandlers() {
         onCreate: (handler) => handler,
         onUpdate: (handler) => handler,
         onWrite: (handler) => handler,
+        // v757: functions/index.js now has .onDelete triggers (audio cleanup); without this
+        // the whole bridge threw at load and every feature action returned 503.
+        onDelete: (handler) => handler,
       }),
     },
     pubsub: {
@@ -4625,6 +4628,26 @@ app.post("/milestone-earnings/action", verifyFirebaseAuth,
   (req, res) => runFeatureAction("milestoneEarningsAction", req, res));
 app.post("/admin/action", verifyFirebaseAuth,
   (req, res) => runFeatureAction("adminAction", req, res));
+// v757: Status feed fan-out. Body: { op: "owner" | "viewer", force?: bool }.
+// "owner" = my statuses changed -> refresh my contacts' statusFeed rows.
+// "viewer" = rebuild my own statusFeed from my contacts (first run / contacts changed).
+// Light per-uid throttle so a burst of status edits costs one fan-out, not ten.
+const statusFeedSyncLast = new Map();
+app.post("/status/feed/sync", verifyFirebaseAuth, (req, res) => {
+  const uid = req.user && req.user.uid;
+  const op = req.body && req.body.op === "viewer" ? "viewer" : "owner";
+  const key = uid + ":" + op;
+  const now = Date.now();
+  const minGap = op === "owner" ? 1500 : 30 * 1000;
+  if (uid && now - (statusFeedSyncLast.get(key) || 0) < minGap) {
+    return res.json({ ok: true, throttled: true });
+  }
+  if (uid) statusFeedSyncLast.set(key, now);
+  if (statusFeedSyncLast.size > 5000) {
+    for (const [k, t] of statusFeedSyncLast) if (now - t > 60 * 1000) statusFeedSyncLast.delete(k);
+  }
+  return runFeatureAction("syncStatusFeed", req, res);
+});
 
 async function runPairingApprovalPoll() {
   const db = admin.database();
@@ -4766,6 +4789,13 @@ function startServerFeatureJobs() {
   setInterval(() => runScheduledFeature("cleanupExpiredStatusReplies")
     .catch((e) => console.error("[status-replies-cleanup] failed:", e.message)),
   30 * 60 * 1000);
+  // v757: status feed safety-net rebuild (expiry, missed syncs, contact changes).
+  setInterval(() => runScheduledFeature("reconcileStatusFeed")
+    .catch((e) => console.error("[status-feed-reconcile] failed:", e.message)),
+  15 * 60 * 1000);
+  setTimeout(() => runScheduledFeature("reconcileStatusFeed")
+    .catch((e) => console.error("[status-feed-reconcile] initial failed:", e.message)),
+  45 * 1000);
   console.log("[OK] Render action routes and polling jobs attached");
 }
 
