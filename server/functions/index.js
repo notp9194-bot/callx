@@ -458,6 +458,279 @@ exports.cleanupExpiredStatusReplies = functions.pubsub
   });
 
 /**
+ * ════════════════════════════════════════════════════════════════════════════
+ * 📡 STATUS FEED FAN-OUT  (v757)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Problem: the app used to attach one status/{contactUid} listener per contact
+ * (x3 in some places) — 500 contacts = 500+ listeners, almost all on empty nodes.
+ *
+ * Fix: this server keeps a per-viewer INDEX of "who currently has a live status
+ * that I'm allowed to see":
+ *
+ *   statusFeed/{viewerUid}/{ownerUid} = {
+ *     n:   number of live statuses visible to this viewer,
+ *     ts:  timestamp of the newest one,          id: its statusId,
+ *     ty:  its type (text|image|video|...),      th: its thumbnail url,
+ *     mu:  its media url,                        tx: text snippet (<=120 chars),
+ *     exp: earliest effective expiry among live statuses (ms),
+ *     ids: { statusId: effectiveExpiryMs, ... }  (<= STATUS_FEED_MAX_IDS newest),
+ *     u:   server timestamp of this write
+ *   }
+ *   statusFeedMeta/{viewerUid} = { builtAt, v }   (written by rebuildViewerFeed)
+ *
+ * The app attaches ONE listener on statusFeed/{me} and only then listens to
+ * status/{owner} for owners that are in the feed.
+ *
+ * Audience of an owner = keys of contacts/{owner} (same rule /notify/status uses).
+ * Per-status privacy is applied here: privacy "only" / "except" / close-friends
+ * (privacyList) and blocks/{owner}/{viewer}.
+ *
+ * Writers (all Admin SDK; rules make statusFeed* read-only for clients):
+ *   - syncStatusFeed (callable → POST /status/feed/sync on Render): called by the
+ *     app when MY statuses change (post / delete / privacy / schedule publish) and
+ *     for a viewer-side rebuild.
+ *   - onStatusWriteSyncFeed (real Cloud Functions only; no-op on the Render bridge).
+ *   - reconcileStatusFeed (every 15 min): full rebuild — safety net for missed
+ *     calls, expiry, contacts added/removed. Also prunes expired feed entries.
+ */
+const STATUS_FEED_DAY = 24 * 60 * 60 * 1000;
+const STATUS_FEED_MAX_IDS = 40;
+const STATUS_FEED_VERSION = 1;
+const STATUS_FEED_VIEWER_REBUILD_MIN_GAP_MS = 10 * 60 * 1000;
+
+function statusFeedEffExpiry(v) {
+  const e = Number(v && v.expiresAt);
+  if (e > 0) return e;
+  const t = Number(v && v.timestamp);
+  return t > 0 ? t + STATUS_FEED_DAY : 0;
+}
+
+function statusFeedList(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter(Boolean).map(String);
+  if (typeof raw === "object") return Object.values(raw).filter(Boolean).map(String);
+  return [];
+}
+
+/** Same audience rules as StatusViewerActivity#canIViewOriginal. */
+function statusFeedVisibleTo(v, viewerUid) {
+  const list = statusFeedList(v.privacyList);
+  if (v.privacy === "only") return list.includes(viewerUid);
+  if (v.privacy === "except") return !list.includes(viewerUid);
+  if (v.isCloseFriends === true) return list.includes(viewerUid);
+  return true;
+}
+
+/** A status is feed-eligible when it is live, published and not deleted. */
+function statusFeedIsLive(v, now) {
+  if (!v || v.deleted === true) return false;
+  if (Number(v.scheduledAt) > now) return false;
+  const exp = statusFeedEffExpiry(v);
+  return exp > now;
+}
+
+/** Collapse one owner's live statuses (already filtered for a viewer) into the feed summary. */
+function statusFeedSummarize(items) {
+  if (!items.length) return null;
+  items.sort((a, b) => (Number(a.v.timestamp) || 0) - (Number(b.v.timestamp) || 0));
+  const newest = items[items.length - 1];
+  let minExp = Infinity;
+  const ids = {};
+  items.slice(-STATUS_FEED_MAX_IDS).forEach((it) => {
+    ids[it.id] = it.exp;
+  });
+  items.forEach((it) => { if (it.exp < minExp) minExp = it.exp; });
+  const nv = newest.v;
+  const out = {
+    n: items.length,
+    ts: Number(nv.timestamp) || 0,
+    id: newest.id,
+    ty: String(nv.type || "text").slice(0, 20),
+    exp: minExp === Infinity ? 0 : minExp,
+    ids,
+    u: ServerValue.TIMESTAMP,
+  };
+  if (nv.thumbnailUrl) out.th = String(nv.thumbnailUrl).slice(0, 600);
+  if (nv.mediaUrl) out.mu = String(nv.mediaUrl).slice(0, 600);
+  const tx = nv.text || nv.caption;
+  if (tx) out.tx = String(tx).slice(0, 120);
+  return out;
+}
+
+/** Live status items of one owner snapshot value: [{id, v, exp}] */
+function statusFeedLiveItems(ownerVal, now) {
+  const items = [];
+  Object.keys(ownerVal || {}).forEach((id) => {
+    const v = ownerVal[id];
+    if (!v || typeof v !== "object") return;
+    if (!statusFeedIsLive(v, now)) return;
+    items.push({ id, v, exp: statusFeedEffExpiry(v) });
+  });
+  return items;
+}
+
+async function statusFeedWriteUpdates(db, updates) {
+  const keys = Object.keys(updates);
+  for (let i = 0; i < keys.length; i += 400) {
+    const chunk = {};
+    keys.slice(i, i + 400).forEach((k) => { chunk[k] = updates[k]; });
+    await db.ref().update(chunk);
+  }
+}
+
+/**
+ * Owner side: recompute what every contact of `ownerUid` should see and write it.
+ * Idempotent — always derives from the current status/{owner} + contacts/{owner}.
+ * Viewers that no longer qualify (deleted / expired / privacy / blocked) get null.
+ */
+async function syncStatusFeedForOwner(ownerUid) {
+  if (!ownerUid || typeof ownerUid !== "string") return { viewers: 0, written: 0 };
+  const db = getDatabase();
+  const now = Date.now();
+  const [statusSnap, contactsSnap, blocksSnap, oldFanSnap] = await Promise.all([
+    db.ref(`status/${ownerUid}`).once("value"),
+    db.ref(`contacts/${ownerUid}`).once("value"),
+    db.ref(`blocks/${ownerUid}`).once("value"),
+    db.ref(`statusFeedOwners/${ownerUid}`).once("value"),
+  ]);
+  const live = statusFeedLiveItems(statusSnap.val(), now);
+  const blocked = new Set(Object.keys(blocksSnap.val() || {}).filter((k) => (blocksSnap.val() || {})[k] === true));
+  const viewers = new Set(Object.keys(contactsSnap.val() || {}));
+  viewers.delete(ownerUid);
+  const previouslyFanned = Object.keys(oldFanSnap.val() || {});
+
+  const updates = {};
+  const nowFanned = {};
+  let written = 0;
+  viewers.forEach((viewerUid) => {
+    if (blocked.has(viewerUid)) return;
+    const visible = live.filter((it) => statusFeedVisibleTo(it.v, viewerUid));
+    const summary = statusFeedSummarize(visible);
+    if (summary) {
+      updates[`statusFeed/${viewerUid}/${ownerUid}`] = summary;
+      nowFanned[viewerUid] = true;
+      written++;
+    }
+  });
+  // Clear viewers we fanned out to before that no longer qualify (or were removed/blocked).
+  previouslyFanned.forEach((viewerUid) => {
+    if (!nowFanned[viewerUid]) updates[`statusFeed/${viewerUid}/${ownerUid}`] = null;
+  });
+  // Fan-out ledger so cleanup stays exact even after contacts change.
+  updates[`statusFeedOwners/${ownerUid}`] = Object.keys(nowFanned).length ? nowFanned : null;
+
+  await statusFeedWriteUpdates(db, updates);
+  return { viewers: viewers.size, written };
+}
+
+/**
+ * Viewer side: rebuild MY feed from my contacts (new install, contact added,
+ * first run after this feature ships). Throttled per viewer.
+ */
+async function rebuildStatusFeedForViewer(viewerUid, force) {
+  const db = getDatabase();
+  const now = Date.now();
+  const metaRef = db.ref(`statusFeedMeta/${viewerUid}`);
+  if (!force) {
+    const metaSnap = await metaRef.once("value");
+    const builtAt = Number((metaSnap.val() || {}).builtAt) || 0;
+    if (builtAt && now - builtAt < STATUS_FEED_VIEWER_REBUILD_MIN_GAP_MS) {
+      return { skipped: true, builtAt };
+    }
+  }
+  const contactsSnap = await db.ref(`contacts/${viewerUid}`).once("value");
+  const owners = Object.keys(contactsSnap.val() || {}).filter((u) => u !== viewerUid);
+  const updates = {};
+  // Reads run in small parallel batches (each is one small status/{owner} node).
+  for (let i = 0; i < owners.length; i += 25) {
+    const batch = owners.slice(i, i + 25);
+    const snaps = await Promise.all(batch.map((o) => Promise.all([
+      db.ref(`status/${o}`).once("value"),
+      db.ref(`blocks/${o}/${viewerUid}`).once("value"),
+    ])));
+    snaps.forEach(([sSnap, bSnap], idx) => {
+      const ownerUid = batch[idx];
+      if (bSnap.val() === true) return;
+      const live = statusFeedLiveItems(sSnap.val(), now)
+        .filter((it) => statusFeedVisibleTo(it.v, viewerUid));
+      const summary = statusFeedSummarize(live);
+      updates[`statusFeed/${viewerUid}/${ownerUid}`] = summary; // null clears a stale entry
+      updates[`statusFeedOwners/${ownerUid}/${viewerUid}`] = summary ? true : null;
+    });
+  }
+  // Drop feed rows for owners that are no longer contacts.
+  const existing = await db.ref(`statusFeed/${viewerUid}`).once("value");
+  Object.keys(existing.val() || {}).forEach((o) => {
+    if (!owners.includes(o)) {
+      updates[`statusFeed/${viewerUid}/${o}`] = null;
+      updates[`statusFeedOwners/${o}/${viewerUid}`] = null;
+    }
+  });
+  updates[`statusFeedMeta/${viewerUid}`] = { builtAt: ServerValue.TIMESTAMP, v: STATUS_FEED_VERSION };
+  await statusFeedWriteUpdates(db, updates);
+  return { skipped: false, owners: owners.length };
+}
+
+/**
+ * Callable. data.op:
+ *   "owner"  (default) → fan-out MY statuses to my contacts' feeds
+ *   "viewer"           → rebuild MY feed from my contacts (throttled; data.force skips throttle for first build)
+ * uid always comes from the verified auth context, never from the body.
+ */
+exports.syncStatusFeed = functions.https.onCall(async (data, context) => {
+  if (!context.auth || !context.auth.uid) {
+    throw new functions.https.HttpsError("unauthenticated", "Sign in required");
+  }
+  const uid = context.auth.uid;
+  const op = data && data.op === "viewer" ? "viewer" : "owner";
+  if (op === "viewer") {
+    return { ok: true, op, ...(await rebuildStatusFeedForViewer(uid, data && data.force === true)) };
+  }
+  return { ok: true, op, ...(await syncStatusFeedForOwner(uid)) };
+});
+
+/** Real Cloud Functions deployments get the realtime trigger; the Render bridge ignores it. */
+exports.onStatusWriteSyncFeed = functions.database
+  .ref("/status/{ownerUid}/{statusId}")
+  .onWrite(async (change, context) => {
+    const before = change.before && change.before.val ? change.before.val() : null;
+    const after = change.after && change.after.val ? change.after.val() : null;
+    // Counters (seenBy/viewCount/reactions/replies) churn constantly — ignore them.
+    const keyFields = ["deleted", "expiresAt", "timestamp", "privacy", "privacyList", "isCloseFriends", "thumbnailUrl", "scheduledAt"];
+    if (before && after && keyFields.every((k) => JSON.stringify(before[k]) === JSON.stringify(after[k]))) {
+      return null;
+    }
+    return syncStatusFeedForOwner(context.params.ownerUid);
+  });
+
+/**
+ * Safety net, every 15 min: rebuild every owner's fan-out from the status tree,
+ * which also (a) drops entries whose statuses expired, (b) catches posts/deletes
+ * whose app-side sync call never reached the server, (c) picks up new contacts.
+ * One `status` read — same cost class as the two existing sweeps.
+ */
+exports.reconcileStatusFeed = functions.pubsub
+  .schedule("every 15 minutes")
+  .onRun(async () => {
+    const db = getDatabase();
+    const statusRootSnap = await db.ref("status").once("value");
+    const owners = new Set();
+    statusRootSnap.forEach((ownerSnap) => { owners.add(ownerSnap.key); });
+    // Owners that still have fan-out rows but no longer any status node at all.
+    const ledgerSnap = await db.ref("statusFeedOwners").once("value");
+    ledgerSnap.forEach((ownerSnap) => { owners.add(ownerSnap.key); });
+    let done = 0;
+    const list = Array.from(owners);
+    for (let i = 0; i < list.length; i += 10) {
+      await Promise.all(list.slice(i, i + 10).map((o) =>
+        syncStatusFeedForOwner(o).then(() => { done++; })
+          .catch((e) => console.error(`[status-feed] reconcile ${o} failed:`, e.message))));
+    }
+    console.log(`[status-feed] reconcile: ${done}/${list.length} owner(s)`);
+    return null;
+  });
+
+/**
  * CallX Admin Control Center
  * ==========================
  * All privileged admin operations live behind this callable boundary. The
